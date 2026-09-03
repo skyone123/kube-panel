@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listContexts, useContext } from '../api/tauri';
-import { useAppStore } from '../stores/appStore';
 
 export function ContextSwitcher() {
   const qc = useQueryClient();
-  const { currentContext } = useAppStore();
   const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
   const mut = useMutation({
     mutationFn: useContext,
@@ -13,8 +11,10 @@ export function ContextSwitcher() {
       await qc.invalidateQueries({ queryKey: ['pods'] });
     },
   });
-  // derive current from freshly-fetched contexts (current flag comes from kubeconfig after use_context)
-  const cur = contexts.find(c => c.current) ?? currentContext;
+  // derive current purely from the freshly-fetched ['contexts'] query — the
+  // `current` flag comes from kubeconfig after use_context, so there's no
+  // need for a separate store-backed fallback.
+  const cur = contexts.find(c => c.current) ?? null;
   return (
     <div className="ctx-switcher">
       <select

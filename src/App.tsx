@@ -3,14 +3,19 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
 import { useAppStore } from './stores/appStore';
-import { getPods, currentContext } from './api/tauri';
+import { getPods, listContexts } from './api/tauri';
 import './App.css';
 
 export default function App() {
   const { namespace } = useAppStore();
   const [q, setQ] = useState('');
-  const { data: cur } = useQuery({ queryKey: ['currentContext'], queryFn: currentContext });
-  const ctxName = cur?.name ?? '';
+  // single source of truth: derive the current context from the ['contexts']
+  // query itself (the `current` flag reflects the on-disk kubeconfig after
+  // use_context). This makes the ['pods'] query key change whenever the
+  // active context changes, so TanStack treats it as a NEW query and fetches
+  // fresh pods — race-free, no separate ['currentContext'] query needed.
+  const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
+  const ctxName = contexts.find(c => c.current)?.name ?? '';
   const { data: pods = [] } = useQuery({
     queryKey: ['pods', ctxName, namespace],
     queryFn: () => getPods(ctxName, namespace),
