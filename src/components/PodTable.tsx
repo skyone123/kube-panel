@@ -1,4 +1,3 @@
-import Fuse from 'fuse.js';
 import type { PodView } from '../types';
 
 const BAD = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'Error']);
@@ -23,8 +22,13 @@ function statusPill(status: string) {
 }
 
 export function PodTable({ pods, query, onSelect, selected }: PodTableProps) {
-  const fuse = new Fuse(pods, { keys: ['name', 'namespace', 'node'], threshold: 0.4 });
-  const shown = query.trim() ? fuse.search(query).map(r => r.item) : pods;
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? pods.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.namespace.toLowerCase().includes(q) ||
+        p.node.toLowerCase().includes(q))
+    : pods;
   const selectedKey = selected ? `${selected.namespace}/${selected.name}` : null;
 
   if (shown.length === 0) {

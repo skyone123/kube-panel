@@ -1,9 +1,13 @@
-import Fuse from 'fuse.js';
 import type { HistoryEntry } from '../types';
 
 export function HistoryPanel({ entries, query }: { entries: HistoryEntry[]; query: string }) {
-  const fuse = new Fuse(entries, { keys: ['argv', 'context', 'namespace'], threshold: 0.4 });
-  const shown = query.trim() ? fuse.search(query).map(r => r.item) : entries;
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? entries.filter(e => {
+        const hay = `${e.argv.join(' ')} ${e.context} ${e.namespace ?? ''}`.toLowerCase();
+        return hay.includes(q);
+      })
+    : entries;
   if (shown.length === 0) {
     return (
       <div className="history-empty">
