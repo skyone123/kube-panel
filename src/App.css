@@ -573,6 +573,76 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   font-style: italic;
 }
 
+/* ---------- Log controls bar ---------- */
+.log-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: rgba(255, 255, 255, 0.015);
+  flex-wrap: wrap;
+}
+.lc-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.lc-field .lc-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.lc-check { cursor: pointer; }
+.lc-check input { cursor: pointer; margin: 0; }
+.lc-check span { color: var(--text-secondary); }
+.lc-select,
+.lc-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 4px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.lc-select { padding-right: 22px; }
+.lc-select option { background: var(--bg-elevated); color: var(--text); }
+.lc-input { width: 64px; }
+.lc-select:hover,
+.lc-input:hover { border-color: #484f58; }
+.lc-select:focus,
+.lc-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.20);
+}
+.lc-stop {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: var(--status-error-bg);
+  color: var(--status-error);
+  border: 1px solid rgba(248, 81, 73, 0.40);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.lc-stop:hover {
+  background: rgba(248, 81, 73, 0.20);
+  border-color: var(--status-error);
+}
+
 /* History */
 .history-card .card-head .filter-input {
   width: 200px;
