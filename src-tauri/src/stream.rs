@@ -13,36 +13,57 @@ impl StreamRegistry {
         StreamRegistry { streams: Arc::new(Mutex::new(HashMap::new())) }
     }
 
-    /// Spawn a reader task for `child`'s piped stdout. Each line is passed to `emit(text)`.
+    /// Spawn reader tasks for `child`'s piped stdout AND stderr. Each stdout line is
+    /// passed to `emit(text)`; each stderr line is passed to `emit("[stderr] " + text)`
+    /// so the frontend can distinguish them. Draining stderr prevents the OS pipe
+    /// buffer from filling (e.g. kubectl reconnect/timeout warnings on `logs -f`) and
+    /// deadlocking the child's stdout.
     /// The `id` is caller-supplied (so the emit closure can know it before `start` returns).
     /// The child is held in the registry; `stop(id)` kills it. When the child's stdout
-    /// EOFs, the reader removes the entry from the registry.
+    /// EOFs, the stdout reader removes the entry from the registry (stderr reader only
+    /// drains — it never removes, so ownership of removal stays with stdout).
     pub fn start<F>(&self, id: String, mut child: Child, emit: F) -> String
     where F: Fn(String) + Send + Sync + 'static {
-        // stdout must have been piped by the caller
-        let stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => {
-                // nothing to read; child still registered so stop() can kill
-                self.streams.lock().unwrap().insert(id.clone(), child);
-                return id;
-            }
-        };
+        let emit: Arc<F> = Arc::new(emit);
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
         self.streams.lock().unwrap().insert(id.clone(), child);
-        let streams = self.streams.clone();
-        let id2 = id.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                let mut buf = String::new();
-                match reader.read_line(&mut buf).await {
-                    Ok(0) => break,          // EOF — child closed stdout
-                    Ok(_) => emit(buf),
-                    Err(_) => break,
+
+        // stdout reader: primary — removes the entry from the registry on EOF
+        if let Some(stdout) = stdout {
+            let emit = emit.clone();
+            let id2 = id.clone();
+            let streams = self.streams.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout);
+                loop {
+                    let mut buf = String::new();
+                    match reader.read_line(&mut buf).await {
+                        Ok(0) => break,          // EOF — child closed stdout
+                        Ok(_) => emit(buf),
+                        Err(_) => break,
+                    }
                 }
-            }
-            streams.lock().unwrap().remove(&id2);
-        });
+                streams.lock().unwrap().remove(&id2);
+            });
+        }
+
+        // stderr reader: drain only (don't remove on EOF — stdout owns removal)
+        if let Some(stderr) = stderr {
+            let emit = emit.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                loop {
+                    let mut buf = String::new();
+                    match reader.read_line(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(_) => emit(format!("[stderr] {}", buf)),
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
         id
     }
 
