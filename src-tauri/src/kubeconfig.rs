@@ -38,7 +38,7 @@ struct NamedThing {
     name: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ContextView {
     pub name: String,
     pub cluster: String,

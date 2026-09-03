@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use serde::{Serialize, Deserialize};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -16,8 +16,9 @@ pub struct HistoryEntry {
     pub favorite: bool,
 }
 
+#[derive(Clone)]
 pub struct History {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl History {
@@ -42,7 +43,7 @@ impl History {
             CREATE INDEX IF NOT EXISTS idx_history_ts ON command_history(ts DESC);
             CREATE INDEX IF NOT EXISTS idx_history_context ON command_history(context);"
         ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        Ok(History { conn: Mutex::new(conn) })
+        Ok(History { conn: Arc::new(Mutex::new(conn)) })
     }
 
     pub fn default_path() -> std::path::PathBuf {
