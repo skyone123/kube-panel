@@ -2,7 +2,6 @@ use tauri::State;
 use crate::kubeconfig::{self, ContextView};
 use crate::history::{History, HistoryEntry};
 use crate::runtime::KubeRuntime;
-use crate::kubectl::Kubectl;
 use crate::models::{self, PodView};
 
 #[tauri::command]

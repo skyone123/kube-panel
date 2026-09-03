@@ -62,10 +62,8 @@ impl Kubectl {
 mod tests {
     use super::*;
 
-    // Uses a fake `kubectl` placed on PATH via the KUBECTL_FAKE env trick:
-    // build() sets env KP_FAKE=1 on the child; the shim reads KP_FAKE_ARGS for the
-    // canned response. For the unit test we just assert build() assembles argv
-    // correctly WITHOUT executing (no PATH mutation needed).
+    // These tests assert that `build()` assembles argv correctly by inspecting
+    // `cmd.as_std().get_args()` — no kubectl execution, no PATH mutation.
 
     fn kubectl_with_override(p: Option<PathBuf>) -> Kubectl {
         Kubectl { binary: "kubectl".into(), kubeconfig_override: p }
