@@ -2,13 +2,18 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
+import { LogViewer } from './components/LogViewer';
+import { HistoryPanel } from './components/HistoryPanel';
 import { useAppStore } from './stores/appStore';
-import { getPods, listContexts } from './api/tauri';
+import { getPods, listContexts, listHistory } from './api/tauri';
+import type { PodView } from './types';
 import './App.css';
 
 export default function App() {
   const { namespace } = useAppStore();
   const [q, setQ] = useState('');
+  const [selectedPod, setSelectedPod] = useState<PodView | null>(null);
+  const [histQuery, setHistQuery] = useState('');
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -21,12 +26,18 @@ export default function App() {
     queryFn: () => getPods(ctxName, namespace),
     enabled: !!ctxName,
   });
+  const { data: history = [] } = useQuery({ queryKey: ['history'], queryFn: () => listHistory(100) });
   return (
     <div className="app">
       <Sidebar />
       <main className="main">
         <input placeholder="filter pods…" value={q} onChange={e => setQ(e.target.value)} />
-        <PodTable pods={pods} query={q} />
+        <PodTable pods={pods} query={q} onSelect={setSelectedPod} />
+        <LogViewer pod={selectedPod} />
+        <section className="history-section">
+          <input placeholder="search history…" value={histQuery} onChange={e => setHistQuery(e.target.value)} />
+          <HistoryPanel entries={history} query={histQuery} />
+        </section>
       </main>
     </div>
   );
