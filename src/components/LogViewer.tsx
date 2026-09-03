@@ -12,7 +12,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     queryFn: () => getPodLogs(ctxName, namespace, pod!.name, null, false, 1000),
     enabled: !!pod && !!ctxName,
   });
-  if (!pod) return <div className="logs">Select a pod to view logs.</div>;
-  if (isLoading) return <div className="logs">Loading…</div>;
+  if (!pod) return <div className="logs placeholder">Select a pod to view logs.</div>;
+  if (isLoading) return <div className="logs placeholder">Loading…</div>;
   return <pre className="logs">{logs ?? ''}</pre>;
 }
