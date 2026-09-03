@@ -28,12 +28,25 @@ pub async fn use_context(name: String, rt: State<'_, KubeRuntime>) -> Result<(),
 
 #[tauri::command]
 pub async fn get_pods(context: String, namespace: String, rt: State<'_, KubeRuntime>) -> Result<Vec<PodView>, String> {
-    let res = rt.run(&context, Some(&namespace), &["get", "pods", "-o", "json"]).await
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "pods", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "pods", "-o", "json"]
+    };
+    let res = rt.run(&context, if namespace.is_empty() { None } else { Some(&namespace) }, args).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 {
         return Err(res.stderr);
     }
     models::parse_pod_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_namespaces(context: String, rt: State<'_, KubeRuntime>) -> Result<Vec<String>, String> {
+    let res = rt.run(&context, None, &["get", "ns", "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_namespace_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

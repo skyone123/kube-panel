@@ -26,6 +26,7 @@ pub fn run() {
             commands::current_context,
             commands::use_context,
             commands::get_pods,
+            commands::list_namespaces,
             commands::get_pod_logs,
             commands::list_history,
             commands::search_history,

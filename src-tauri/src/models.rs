@@ -34,6 +34,19 @@ pub struct WaitingState { pub reason: String }
 #[derive(Debug, Clone, Deserialize)]
 pub struct TerminatedState { pub reason: String }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct NamespaceList { pub items: Vec<NamespaceItem> }
+#[derive(Debug, Clone, Deserialize)]
+pub struct NamespaceItem { pub metadata: NamespaceMeta }
+#[derive(Debug, Clone, Deserialize)]
+pub struct NamespaceMeta { pub name: String }
+
+pub fn parse_namespace_list(json: &[u8]) -> std::io::Result<Vec<String>> {
+    let list: NamespaceList = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(list.items.into_iter().map(|i| i.metadata.name).collect())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PodView {
     pub name: String, pub namespace: String, pub ready: String,
@@ -114,5 +127,19 @@ mod tests {
         assert_eq!(c.status, "CrashLoopBackOff");
         assert_eq!(c.restarts, 7);
         assert_eq!(c.ready, "0/1");
+    }
+
+    #[test]
+    fn parses_namespace_list_names() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"arc-system"}},
+                {"metadata":{"name":"default"}}
+            ]
+        }"#;
+        let names = parse_namespace_list(json).unwrap();
+        assert_eq!(names.len(), 2);
+        assert_eq!(names[0], "arc-system");
+        assert_eq!(names[1], "default");
     }
 }
