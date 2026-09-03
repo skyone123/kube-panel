@@ -5,10 +5,12 @@ mod kubeconfig;
 mod kubectl;
 mod models;
 mod runtime;
+mod stream;
 
 use history::History;
 use kubectl::Kubectl;
 use runtime::KubeRuntime;
+use stream::StreamRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -21,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(runtime)
         .manage(history)
+        .manage(StreamRegistry::new())
         .invoke_handler(tauri::generate_handler![
             commands::list_contexts,
             commands::current_context,
@@ -30,6 +33,8 @@ pub fn run() {
             commands::get_pod_logs,
             commands::list_history,
             commands::search_history,
+            commands::stream_pod_logs,
+            commands::stop_log_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

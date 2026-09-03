@@ -1,8 +1,9 @@
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use crate::kubeconfig::{self, ContextView};
 use crate::history::{History, HistoryEntry};
-use crate::runtime::KubeRuntime;
+use crate::runtime::{build_history_entry, KubeRuntime};
 use crate::models::{self, PodView};
+use crate::stream::StreamRegistry;
 
 #[tauri::command]
 pub fn list_contexts() -> Result<Vec<ContextView>, String> {
@@ -76,4 +77,78 @@ pub fn list_history(limit: i64, history: State<'_, History>) -> Result<Vec<Histo
 #[tauri::command]
 pub fn search_history(query: String, limit: i64, history: State<'_, History>) -> Result<Vec<HistoryEntry>, String> {
     history.search(&query, limit).map_err(|e| e.to_string())
+}
+
+/// A chunk of streaming log output pushed to the frontend via the `log_chunk` event.
+#[derive(serde::Serialize, Clone)]
+pub struct LogChunk {
+    pub id: String,
+    pub text: String,
+}
+
+/// Start a `kubectl logs -f` stream. Returns the stream id. Log chunks are emitted
+/// to the frontend as `log_chunk` events `{ id, text }`. The stream stays alive
+/// until the child exits (EOF) or `stop_log_stream` is called.
+///
+/// History metadata: the invocation is recorded once with `is_stream=true` and
+/// `exit_code=None` (the final exit code isn't known at start). Log CHUNK text is
+/// NEVER written to history — it only goes to the frontend via events.
+#[tauri::command]
+pub async fn stream_pod_logs(
+    context: String,
+    namespace: String,           // "" = all-namespaces (mirror get_pods)
+    pod: String,
+    container: Option<String>,
+    previous: bool,
+    tail: Option<i64>,
+    since: Option<String>,       // e.g. "5m", "1h"
+    rt: State<'_, KubeRuntime>,
+    registry: State<'_, StreamRegistry>,
+    history: State<'_, History>,
+    app: AppHandle,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["logs".into(), "-f".into(), pod];
+    if let Some(c) = &container {
+        args.push("-c".into());
+        args.push(c.clone());
+    }
+    if previous {
+        args.push("--previous".into());
+    }
+    if let Some(n) = tail {
+        args.push(format!("--tail={}", n));
+    }
+    if let Some(s) = since {
+        args.push(format!("--since={}", s));
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    // record a history row (is_stream=true, exit_code=None — final exit code not known at start)
+    let entry = build_history_entry(&context, ns_opt, &arg_refs, None, 0, true);
+    // best-effort: don't fail the stream on a history write error
+    if let Err(e) = history.insert(&entry) {
+        eprintln!("[kube-panel] history insert failed for stream start: {e}");
+    }
+
+    // pre-allocate the id so the emit closure can capture it before `start` returns
+    let id = crate::stream::new_id();
+    let id_for_emit = id.clone();
+    let id_ret = registry.start(id.clone(), child, move |text| {
+        let _ = app.emit("log_chunk", LogChunk { id: id_for_emit.clone(), text });
+    });
+    debug_assert_eq!(id_ret, id, "StreamRegistry::start must echo the caller-supplied id");
+    Ok(id)
+}
+
+/// Stop a running log stream by id. Kills the child process synchronously.
+#[tauri::command]
+pub fn stop_log_stream(id: String, registry: State<'_, StreamRegistry>) -> Result<(), String> {
+    registry.stop(&id);
+    Ok(())
 }

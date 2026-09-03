@@ -20,6 +20,13 @@ impl KubeRuntime {
             .expect("history_list: list() failed")
     }
 
+    /// Build a streaming `tokio::process::Command` without running it. Additive
+    /// passthrough so command handlers can spawn long-lived children (`kubectl
+    /// logs -f`) without going through one-shot `run()`.
+    pub fn build_cmd(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> tokio::process::Command {
+        self.kubectl.build(context, namespace, args)
+    }
+
     pub async fn run(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> std::io::Result<RunResult> {
         let start = Instant::now();
         let res = self.kubectl.run(context, namespace, args).await;
