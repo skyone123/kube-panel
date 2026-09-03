@@ -8,6 +8,7 @@ pub struct RunResult {
 }
 
 pub struct Kubectl {
+    binary: String,
     kubeconfig_override: Option<PathBuf>,
 }
 
@@ -20,11 +21,19 @@ impl Kubectl {
         } else {
             None
         };
-        Kubectl { kubeconfig_override: override_path }
+        Kubectl { binary: "kubectl".into(), kubeconfig_override: override_path }
+    }
+
+    /// Test-only constructor that points at an arbitrary binary path so unit
+    /// tests can drive `run()` through a fake kubectl script without mutating
+    /// the process PATH (which would race with parallel tests).
+    #[cfg(test)]
+    pub fn with_binary(name: String) -> Self {
+        Kubectl { binary: name, kubeconfig_override: None }
     }
 
     pub fn build(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> Command {
-        let mut cmd = Command::new("kubectl");
+        let mut cmd = Command::new(&self.binary);
         if let Some(p) = &self.kubeconfig_override {
             cmd.arg("--kubeconfig").arg(p);
         }
@@ -59,7 +68,7 @@ mod tests {
     // correctly WITHOUT executing (no PATH mutation needed).
 
     fn kubectl_with_override(p: Option<PathBuf>) -> Kubectl {
-        Kubectl { kubeconfig_override: p }
+        Kubectl { binary: "kubectl".into(), kubeconfig_override: p }
     }
 
     #[test]

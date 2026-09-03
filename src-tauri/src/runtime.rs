@@ -12,6 +12,14 @@ impl KubeRuntime {
         KubeRuntime { kubectl, history }
     }
 
+    /// Test-only accessor: read back recorded history rows so tests can assert
+    /// what `run()` actually persisted, without re-opening the DB file.
+    #[cfg(test)]
+    pub fn history_list(&self) -> Vec<HistoryEntry> {
+        self.history.list(100)
+            .expect("history_list: list() failed")
+    }
+
     pub async fn run(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> std::io::Result<RunResult> {
         let start = Instant::now();
         let res = self.kubectl.run(context, namespace, args).await;
@@ -55,39 +63,117 @@ pub fn build_history_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kubectl::Kubectl;
     use std::io::Write;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // Strategy: create a temp dir with a `kubectl.cmd` (Windows) that echoes a fixed
-    // string and exits 0, prepend it to PATH for the child only via cmd.env().
-    // We drive run() through Kubectl directly here; instead we test the pure helper
-    // `build_history_entry` which is the only non-kernel logic.
+    /// Write a fake `.cmd` kubectl shim to the temp dir and return its full path.
+    /// Each call gets a unique filename (atomic counter) so parallel tests don't collide.
+    fn write_fake_kubectl(name_part: &str, lines: &[&str]) -> PathBuf {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let mut path = std::env::temp_dir();
+        path.push(format!("kp-fake-kubectl-{}-{}.cmd", n, name_part));
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, "@echo off").unwrap();
+        for line in lines {
+            writeln!(f, "{}", line).unwrap();
+        }
+        path
+    }
 
+    fn tmp_db(name_part: &str) -> PathBuf {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        std::env::temp_dir().join(format!(
+            "kp-rt-{}-{}-{}.db",
+            std::process::id(),
+            n,
+            name_part
+        ))
+    }
+
+    /// (a) Successful kubectl call: history row recorded with exit_code = Some(0),
+    /// argv / context / namespace verbatim.
     #[tokio::test]
-    async fn run_records_history_and_returns_stdout() {
-        // fake kubectl: writes "OK" to stdout, exit 0
-        let tmp = std::env::temp_dir();
-        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let script_name = format!("kubectl_{}.cmd", n);
-        let script_path = tmp.join(&script_name);
-        let mut f = std::fs::File::create(&script_path).unwrap();
-        writeln!(f, "@echo OK").unwrap();
-        // We can't easily redirect Kubectl::from_env()'s binary name, so test the
-        // entry-building helper instead (see impl). This still guards the contract
-        // that argv + context + namespace land in history verbatim.
-        let _ = f;
-
-        let hist_path = tmp.join(format!("kp-rt-{}-{}.db", std::process::id(), n));
+    async fn run_inserts_history_on_success() {
+        let script = write_fake_kubectl("ok", &["echo hello"]);
+        let hist_path = tmp_db("ok");
         let history = History::open(&hist_path).unwrap();
-        // Build an entry as run() would, mimicking a successful call.
-        let entry = build_history_entry("prod", Some("default"),
-            &["get", "pods", "-o", "json"], Some(0), 7, false);
-        history.insert(&entry).unwrap();
-        let listed = history.list(10).unwrap();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].context, "prod");
-        assert_eq!(listed[0].argv, vec!["get","pods","-o","json"]);
-        std::fs::remove_file(&script_path).ok();
+        let rt = KubeRuntime::new(
+            Kubectl::with_binary(script.to_string_lossy().into_owned()),
+            history,
+        );
+
+        let res = rt.run("dev", Some("default"), &["logs", "nginx"]).await.unwrap();
+        assert_eq!(res.exit_code, 0);
+        assert!(res.stdout.contains("hello"), "stdout should contain hello, got: {}", res.stdout);
+
+        let rows = rt.history_list();
+        assert_eq!(rows.len(), 1, "exactly one history row");
+        assert_eq!(rows[0].context, "dev");
+        assert_eq!(rows[0].namespace.as_deref(), Some("default"));
+        assert_eq!(rows[0].argv, vec!["logs", "nginx"]);
+        assert_eq!(rows[0].exit_code, Some(0));
+        assert_eq!(rows[0].is_stream, false);
+
+        std::fs::remove_file(&script).ok();
+        std::fs::remove_file(&hist_path).ok();
+    }
+
+    /// (b) Failing kubectl call (non-zero exit): history row STILL recorded with
+    /// exit_code = Some(<code>), argv intact, and run() returns Ok(RunResult).
+    #[tokio::test]
+    async fn run_inserts_history_on_nonzero_exit() {
+        let script = write_fake_kubectl("fail", &["echo boom", "exit /b 7"]);
+        let hist_path = tmp_db("fail");
+        let history = History::open(&hist_path).unwrap();
+        let rt = KubeRuntime::new(
+            Kubectl::with_binary(script.to_string_lossy().into_owned()),
+            history,
+        );
+
+        // kubectl ran and exited 7 — run() returns Ok, not Err
+        let res = rt.run("prod", None, &["get", "pods"]).await.unwrap();
+        assert_eq!(res.exit_code, 7);
+        assert!(res.stdout.contains("boom"), "stdout should contain boom, got: {}", res.stdout);
+
+        let rows = rt.history_list();
+        assert_eq!(rows.len(), 1, "exactly one history row even on failure");
+        assert_eq!(rows[0].context, "prod");
+        assert_eq!(rows[0].namespace, None);
+        assert_eq!(rows[0].argv, vec!["get", "pods"]);
+        assert_eq!(rows[0].exit_code, Some(7));
+        assert_eq!(rows[0].is_stream, false);
+
+        std::fs::remove_file(&script).ok();
+        std::fs::remove_file(&hist_path).ok();
+    }
+
+    /// (c) Spawn-error path: binary doesn't exist, run() returns Err, but a history
+    /// row is STILL inserted with exit_code = None.
+    #[tokio::test]
+    async fn run_inserts_history_on_spawn_error() {
+        let bogus = PathBuf::from("C:/nonexistent/kp-no-such-binary-xyz.exe");
+        let hist_path = tmp_db("spawn");
+        let history = History::open(&hist_path).unwrap();
+        let rt = KubeRuntime::new(
+            Kubectl::with_binary(bogus.to_string_lossy().into_owned()),
+            history,
+        );
+
+        let res = rt.run("ctx", Some("ns"), &["version"]).await;
+        assert!(res.is_err(), "spawn should fail for nonexistent binary");
+
+        let rows = rt.history_list();
+        assert_eq!(rows.len(), 1, "history row recorded even on spawn error");
+        assert_eq!(rows[0].context, "ctx");
+        assert_eq!(rows[0].namespace.as_deref(), Some("ns"));
+        assert_eq!(rows[0].argv, vec!["version"]);
+        assert_eq!(rows[0].exit_code, None, "exit_code should be None on spawn error");
+        assert_eq!(rows[0].is_stream, false);
+
         std::fs::remove_file(&hist_path).ok();
     }
 }
