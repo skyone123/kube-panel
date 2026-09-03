@@ -69,7 +69,11 @@ impl History {
 
     fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
         let argv_json: String = row.get("argv_json")?;
-        let argv: Vec<String> = serde_json::from_str(&argv_json).unwrap_or_default();
+        let argv: Vec<String> = serde_json::from_str(&argv_json)
+            .unwrap_or_else(|e| {
+                eprintln!("[kube-panel] malformed argv_json in history row: {e}");
+                Vec::new()
+            });
         Ok(HistoryEntry {
             id: Some(row.get("id")?),
             ts_ms: row.get("ts")?,
