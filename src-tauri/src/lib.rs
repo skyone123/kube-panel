@@ -2,6 +2,7 @@
 mod history;
 mod kubeconfig;
 mod kubectl;
+mod models;
 mod runtime;
 
 #[tauri::command]
