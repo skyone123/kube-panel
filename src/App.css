@@ -95,6 +95,24 @@ button {
   margin-right: 5px;
 }
 
+/* Pod table status colors (spec §5.2):
+   - CrashLoopBackOff / ImagePullBackOff / Error → red row background + bold red text
+   - Running → green text
+   - other non-Running → amber text */
+.pod-table .status-error {
+  background-color: #fff1f0;
+}
+.pod-table .status-error td {
+  color: #d4351c;
+  font-weight: 600;
+}
+.pod-table .status-ok td {
+  color: #1a7f37;
+}
+.pod-table .status-warn td {
+  color: #b08800;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
