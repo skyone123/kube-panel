@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
 import { LogViewer } from './components/LogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
+import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { useAppStore } from './stores/appStore';
 import { getPods, listContexts, listHistory } from './api/tauri';
 import type { PodView } from './types';
@@ -40,7 +41,7 @@ export default function App() {
           <div className="topbar-context">
             <span className="ctx-label">CONTEXT</span>
             <span className={`ctx-name${ctxName ? '' : ' empty'}`}>{ctxName || '— no context —'}</span>
-            <span className="ns-chip">{namespace}</span>
+            <NamespaceSwitcher />
           </div>
           <div className="topbar-divider" />
           <div className="topbar-filter">

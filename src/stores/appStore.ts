@@ -5,6 +5,6 @@ interface AppState {
   setNamespace: (n: string) => void;
 }
 export const useAppStore = create<AppState>((set) => ({
-  namespace: 'default',
+  namespace: '',
   setNamespace: (n) => set({ namespace: n }),
 }));
