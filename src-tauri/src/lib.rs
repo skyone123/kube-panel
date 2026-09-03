@@ -2,6 +2,7 @@
 mod history;
 mod kubeconfig;
 mod kubectl;
+mod runtime;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
