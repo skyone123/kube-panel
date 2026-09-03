@@ -16,16 +16,16 @@ impl KubeRuntime {
         let start = Instant::now();
         let res = self.kubectl.run(context, namespace, args).await;
         let duration_ms = start.elapsed().as_millis() as i64;
-        let (exit_code, ok) = match &res {
-            Ok(r) => (Some(r.exit_code), true),
-            Err(_) => (None, false),
+        let exit_code = match &res {
+            Ok(r) => Some(r.exit_code),
+            Err(_) => None,
         };
         let entry = build_history_entry(context, namespace, args, exit_code, duration_ms, false);
         // history write must not mask the original result
         if let Err(e) = self.history.insert(&entry) {
             eprintln!("[kube-panel] history insert failed: {e}");
         }
-        if ok { res } else { res }
+        res
     }
 }
 
