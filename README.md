@@ -84,10 +84,15 @@ krew plugins work unchanged. The app never speaks to the cluster directly.
   `tokio::process::Command` with argv arrays — never a shell. Pod/deployment
   names are passed as individual argv elements, so they cannot break out into
   a separate command.
-- **Write ops are gated.** Destructive/write operations (context switch,
-  rollout restart/scale/undo, port-forward start) show the exact command in a
-  confirm modal before executing. There are no `delete` / `--force` /
-  `apply -f` operations in the app.
+- **Write ops are gated.** Destructive/write operations (rollout
+  restart/scale/undo, port-forward start) show the exact command in a confirm
+  modal before executing. **Context switch** (`kubectl config use-context`) is
+  intentionally **not** gated — it's treated as non-destructive navigation (it
+  sets `current-context` in `~/.kube/config` but creates/destroys no
+  resources). The actual destructive ops (restart/scale/undo) remain gated
+  regardless of which context is active, so the blast radius of an accidental
+  switch is limited to "subsequent commands land on the wrong context".
+- **No `delete` / `--force` / `apply -f` / `exec`** operations exist in the app.
 - **History is metadata-only** (see above) — no command output touches disk.
 - **kubeconfig is parsed, not logged.** The app reads `~/.kube/config` to list
   contexts; kubeconfig content (tokens, certs, exec configs) is never printed
