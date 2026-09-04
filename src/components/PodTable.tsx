@@ -132,10 +132,11 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           <button
             className="lc-btn"
             onClick={() => { onMergeTail?.(selectedPods); clearMulti(); }}
+            title="合并 tail 选中 pod 的日志（多路流式输出）"
           >
             Tail {multiSel.size} pods
           </button>
-          <button className="lc-btn" onClick={clearMulti}>Clear</button>
+          <button className="lc-btn" onClick={clearMulti} title="清除多选">Clear</button>
         </div>
       )}
       <table className="pod-table">
@@ -147,6 +148,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
                 checked={allSelected}
                 onChange={toggleAll}
                 aria-label="Select all visible pods"
+                title="全选/取消全选当前可见 pod（勾选后可合并 tail 日志）"
               />
             </th>
             <th>Name</th><th>Namespace</th><th>Ready</th><th>Status</th>
@@ -175,6 +177,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
                     onClick={e => e.stopPropagation()}
                     onChange={() => toggleRow(key)}
                     aria-label={`Select ${p.name}`}
+                    title="勾选以加入多选 tail"
                   />
                 </td>
                 <td className="col-name">{p.name}</td>
@@ -196,29 +199,29 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           className="pod-ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <button className="ctx-item" onClick={() => copyName(ctxMenu.pod)}>
+          <button className="ctx-item" onClick={() => copyName(ctxMenu.pod)} title="复制 pod 名">
             Copy name
           </button>
-          <button className="ctx-item" onClick={() => copyKubectlLogs(ctxMenu.pod)}>
+          <button className="ctx-item" onClick={() => copyKubectlLogs(ctxMenu.pod)} title="复制等价的 kubectl logs 命令">
             Copy kubectl logs
           </button>
           <div className="ctx-sep" />
-          <button className="ctx-item" onClick={() => fireAction('images')}>
+          <button className="ctx-item" onClick={() => fireAction('images')} title="查看该 pod 各容器的镜像 tag 与 imageID">
             Show images
           </button>
-          <button className="ctx-item" onClick={() => fireAction('configmaps')}>
+          <button className="ctx-item" onClick={() => fireAction('configmaps')} title="查看该 pod 引用的 ConfigMap 键值">
             Show ConfigMaps
           </button>
-          <button className="ctx-item" onClick={() => fireAction('yaml')}>
+          <button className="ctx-item" onClick={() => fireAction('yaml')} title="查看该 pod 的 YAML（只读）">
             View YAML
           </button>
-          <button className="ctx-item" onClick={() => fireAction('exec')}>
+          <button className="ctx-item" onClick={() => fireAction('exec')} title="kubectl exec -it 进入容器终端（交互式）">
             Exec shell
           </button>
-          <button className="ctx-item" onClick={() => fireAction('describe')}>
+          <button className="ctx-item" onClick={() => fireAction('describe')} title="kubectl describe pod 文本，CrashLoop/OOM 高亮">
             Describe
           </button>
-          <button className="ctx-item" onClick={() => fireAction('events')}>
+          <button className="ctx-item" onClick={() => fireAction('events')} title="该 pod 的结构化事件表（可实时流）">
             Events
           </button>
         </div>

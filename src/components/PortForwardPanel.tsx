@@ -121,9 +121,9 @@ export function PortForwardPanel({ ctxName, namespace, onClose }: PortForwardPan
                       <td className="pf-rel">{relTime(s.started_at)}</td>
                       <td className="pf-actions">
                         {s.status === 'running' ? (
-                          <button className="lc-btn pf-stop-btn" onClick={() => stopMutation.mutate(s.id)}>Stop</button>
+                          <button className="lc-btn pf-stop-btn" onClick={() => stopMutation.mutate(s.id)} title="停止 port-forward 并回收子进程">Stop</button>
                         ) : (
-                          <button className="lc-btn pf-clear-btn" onClick={() => clearMutation.mutate(s.id)}>Clear</button>
+                          <button className="lc-btn pf-clear-btn" onClick={() => clearMutation.mutate(s.id)} title="清除该记录">Clear</button>
                         )}
                       </td>
                     </tr>
@@ -144,6 +144,7 @@ export function PortForwardPanel({ ctxName, namespace, onClose }: PortForwardPan
                   value={target}
                   onChange={e => setTarget(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  title="转发目标，格式 pod/名称 或 svc/名称"
                 />
               </label>
               <label className="lc-field">
@@ -156,6 +157,7 @@ export function PortForwardPanel({ ctxName, namespace, onClose }: PortForwardPan
                   value={localPort}
                   onChange={e => setLocalPort(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  title="本地监听端口（1-65535）"
                 />
               </label>
               <span className="pf-arrow">&rarr;</span>
@@ -169,12 +171,14 @@ export function PortForwardPanel({ ctxName, namespace, onClose }: PortForwardPan
                   value={remotePort}
                   onChange={e => setRemotePort(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  title="转发到 pod 的端口（1-65535）"
                 />
               </label>
               <button
                 className="lc-btn rollout-confirm pf-start-btn"
                 disabled={!targetValid || !portsValid}
                 onClick={() => setConfirming(true)}
+                title="启动 port-forward（启动前会显示完整命令确认）"
               >
                 Start
               </button>

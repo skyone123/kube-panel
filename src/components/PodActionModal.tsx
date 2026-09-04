@@ -46,6 +46,7 @@ function ImagesPanel({ pod }: { pod: PodView }) {
               <button
                 className="ctx-item"
                 onClick={() => navigator.clipboard.writeText(img.image_id)}
+                title="复制 imageID"
               >
                 Copy
               </button>
@@ -149,6 +150,7 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
                   className="ctx-item"
                   onClick={handleCopyAll}
                   disabled={entries.length === 0}
+                  title="复制当前 ConfigMap 全部键值（key=value 格式）"
                 >
                   Copy all
                 </button>
@@ -156,6 +158,7 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
                   className="ctx-item"
                   onClick={handleExport}
                   disabled={entries.length === 0}
+                  title="导出当前 ConfigMap 全部键值为 .txt 文件"
                 >
                   Export
                 </button>
@@ -178,12 +181,14 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
                       <button
                         className="ctx-item"
                         onClick={() => navigator.clipboard.writeText(e.key)}
+                        title="复制键名"
                       >
                         Copy key
                       </button>
                       <button
                         className="ctx-item"
                         onClick={() => navigator.clipboard.writeText(e.value)}
+                        title="复制值"
                       >
                         Copy value
                       </button>
@@ -335,6 +340,7 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
         <button
           className={`events-live-toggle${live ? ' live' : ' paused'}`}
           onClick={() => setLive(v => !v)}
+          title={live ? '已开启：订阅该命名空间的实时事件流（点击暂停）' : '已暂停：点击恢复实时事件流'}
         >
           <span className="live-dot" />
           {live ? 'Live' : 'Paused'}
@@ -344,6 +350,7 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
             type="checkbox"
             checked={onlyThisPod}
             onChange={e => setOnlyThisPod(e.target.checked)}
+            title="只显示当前 pod 的事件，取消则看整个命名空间"
           />
           <span>Only this pod</span>
         </label>
@@ -417,8 +424,8 @@ function YamlPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
   return (
     <>
       <div className="yaml-actions">
-        <button className="ctx-item" onClick={handleCopy}>Copy</button>
-        <button className="ctx-item" onClick={handleExport}>Export</button>
+        <button className="ctx-item" onClick={handleCopy} title="复制 YAML 到剪贴板">Copy</button>
+        <button className="ctx-item" onClick={handleExport} title="导出为 .yaml 文件">Export</button>
       </div>
       <pre className="describe-output mono">
         {lines.map((line, i) => {

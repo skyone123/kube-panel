@@ -12,7 +12,7 @@ export function NamespaceSwitcher() {
     enabled: !!ctxName,
   });
   return (
-    <select className="ns-switcher" value={namespace} onChange={e => setNamespace(e.target.value)}>
+    <select className="ns-switcher" value={namespace} onChange={e => setNamespace(e.target.value)} title="选择命名空间；留空=全部命名空间">
       <option value="">All namespaces</option>
       {namespaces.map(n => <option key={n} value={n}>{n}</option>)}
     </select>

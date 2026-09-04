@@ -239,6 +239,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           className="lc-select"
           value={container}
           onChange={e => setContainer(e.target.value)}
+          title="选择要查看日志的容器；default=主容器"
         >
           <option value="">default</option>
           {containers.map(c => (
@@ -247,7 +248,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
         </select>
       </label>
 
-      <label className="lc-field lc-check">
+      <label className="lc-field lc-check" title="查看上一次（已终止）容器的日志">
         <input
           type="checkbox"
           checked={previous}
@@ -262,6 +263,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           className="lc-select"
           value={since}
           onChange={e => setSince(e.target.value)}
+          title="只看最近一段时间的日志；All=不限时间"
         >
           <option value="">All</option>
           <option value="5m">5m</option>
@@ -277,10 +279,11 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           min={1}
           value={tail}
           onChange={e => setTail(Math.max(1, Number(e.target.value) || 1))}
+          title="只看最后 N 行日志"
         />
       </label>
 
-      <label className="lc-field lc-check">
+      <label className="lc-field lc-check" title="跟随新日志滚动（实时流式）">
         <input
           type="checkbox"
           checked={follow}
@@ -298,8 +301,9 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           value={search}
           onChange={e => setSearch(e.target.value)}
           aria-label="Search logs (regex)"
+          title="正则搜索日志，支持上一个/下一个跳转"
         />
-        <label className="lc-field lc-check" title="Case sensitive">
+        <label className="lc-field lc-check" title="区分大小写">
           <input
             type="checkbox"
             checked={caseSensitive}
@@ -314,26 +318,26 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           className="lc-nav-btn"
           onClick={() => setCurrentMatch(m => (m - 1 + matchIndices.length) % matchIndices.length)}
           disabled={matchIndices.length === 0}
-          title="Previous match"
+          title="上一个匹配"
         >↑</button>
         <button
           className="lc-nav-btn"
           onClick={() => setCurrentMatch(m => (m + 1) % matchIndices.length)}
           disabled={matchIndices.length === 0}
-          title="Next match"
+          title="下一个匹配"
         >↓</button>
       </div>
 
       {/* Right-aligned actions */}
       <div className="lc-actions">
-        <button className="lc-btn" onClick={() => setMaximized(m => !m)}>
+        <button className="lc-btn" onClick={() => setMaximized(m => !m)} title={maximized ? '退出全屏' : '全屏查看日志'}>
           {maximized ? '⤡ Restore' : '⤢ Fullscreen'}
         </button>
-        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0}>
+        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0} title="导出当前缓冲区为 .log 文件">
           Export
         </button>
         {running && (
-          <button className="lc-stop" onClick={handleStop}>Stop</button>
+          <button className="lc-stop" onClick={handleStop} title="停止日志流并断开监听">Stop</button>
         )}
       </div>
     </div>

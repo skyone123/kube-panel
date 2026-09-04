@@ -115,7 +115,7 @@ export function NodeTable({ nodes, query, onDescribe }: NodeTableProps) {
           className="pod-ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <button className="ctx-item" onClick={fireDescribe}>
+          <button className="ctx-item" onClick={fireDescribe} title="kubectl describe node 文本（只读）">
             Describe
           </button>
         </div>

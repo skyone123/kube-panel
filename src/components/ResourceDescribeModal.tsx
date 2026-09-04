@@ -63,8 +63,8 @@ export function ResourceDescribeModal({ kind, name, namespace, ctxName, onClose 
           ) : (
             <>
               <div className="yaml-actions">
-                <button className="ctx-item" onClick={handleCopy}>Copy</button>
-                <button className="ctx-item" onClick={handleExport}>Export</button>
+                <button className="ctx-item" onClick={handleCopy} title="复制 describe 输出到剪贴板">Copy</button>
+                <button className="ctx-item" onClick={handleExport} title="导出为 .txt 文件">Export</button>
               </div>
               <pre className="describe-output mono">
                 {data.split('\n').map((line, i) => (

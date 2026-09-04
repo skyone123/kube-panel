@@ -73,7 +73,7 @@ export default function App() {
             <span className="ctx-label">CONTEXT</span>
             <span className={`ctx-name${ctxName ? '' : ' empty'}`}>{ctxName || '— no context —'}</span>
             <NamespaceSwitcher />
-            <button className="topbar-pf-btn" onClick={() => setShowPf(true)}>Port-forward</button>
+            <button className="topbar-pf-btn" onClick={() => setShowPf(true)} title="端口转发管理（启动/停止 kubectl port-forward）">Port-forward</button>
           </div>
           <div className="topbar-divider" />
           <div className="topbar-filter">
@@ -89,6 +89,7 @@ export default function App() {
               value={q}
               onChange={e => setQ(e.target.value)}
               aria-label="Filter pods"
+              title="按名称/命名空间/节点名过滤，大小写不敏感"
             />
           </div>
         </header>
@@ -101,24 +102,28 @@ export default function App() {
                 <button
                   className={`resource-tab${resourceTab === 'pods' ? ' active' : ''}`}
                   onClick={() => setResourceTab('pods')}
+                  title="列出当前 context/命名空间下的所有 Pod"
                 >Pods</button>
                 <button
                   className={`resource-tab${resourceTab === 'deployments' ? ' active' : ''}`}
                   onClick={() => setResourceTab('deployments')}
+                  title="Deployment 列表，右键可 restart/scale/undo/查看历史"
                 >Deployments</button>
                 <button
                   className={`resource-tab${resourceTab === 'nodes' ? ' active' : ''}`}
                   onClick={() => setResourceTab('nodes')}
+                  title="集群节点列表，右键可 describe"
                 >Nodes</button>
                 <button
                   className={`resource-tab${resourceTab === 'more' ? ' active' : ''}`}
                   onClick={() => setResourceTab('more')}
+                  title="浏览其他资源类型（Service、Ingress、PVC 等）"
                 >More</button>
               </div>
               <button
                 className={`live-toggle${live ? ' live' : ' paused'}`}
                 onClick={() => setLive(v => !v)}
-                title={live ? 'Auto-refresh every 5s (click to pause)' : 'Auto-refresh paused (click to resume)'}
+                title={live ? '已开启：pod/deployment/node 列表每 5 秒自动刷新（点击暂停）' : '已暂停：点击恢复 5 秒自动刷新'}
               >
                 <span className="live-dot" />
                 {live ? 'Live' : 'Paused'}
@@ -182,6 +187,7 @@ export default function App() {
                     value={histQuery}
                     onChange={e => setHistQuery(e.target.value)}
                     aria-label="Search history"
+                    title="搜索历史记录（命令/资源名/状态）"
                   />
                 </div>
               </div>

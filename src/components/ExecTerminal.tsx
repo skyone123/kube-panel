@@ -167,6 +167,7 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
               value={container}
               onChange={e => setContainer(e.target.value)}
               disabled={connected}
+              title="选择在哪个容器里执行命令；default=主容器"
             >
               <option value="">default</option>
               {containers.map(c => (
@@ -184,21 +185,22 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
               disabled={connected}
               onKeyDown={e => { if (e.key === 'Enter' && !connected) handleConnect(); }}
               placeholder="sh"
+              title="要执行的命令，默认 sh"
             />
           </label>
           <div className="exec-toolbar-actions">
             {!connected ? (
-              <button className="lc-btn exec-connect-btn" onClick={handleConnect} disabled={!ctxName}>
+              <button className="lc-btn exec-connect-btn" onClick={handleConnect} disabled={!ctxName} title="启动 kubectl exec -it 交互式终端">
                 Connect
               </button>
             ) : (
-              <button className="lc-btn exec-disconnect-btn" onClick={handleDisconnect}>
+              <button className="lc-btn exec-disconnect-btn" onClick={handleDisconnect} title="断开并结束 exec 会话">
                 Disconnect
               </button>
             )}
           </div>
         </div>
-        <div className="exec-terminal-area">
+        <div className="exec-terminal-area" title="交互式终端，支持常用键位与 ANSI 颜色">
           <div ref={termDivRef} className="exec-terminal" />
           {error && (
             <div className="exec-error">{error}</div>

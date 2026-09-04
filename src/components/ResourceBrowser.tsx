@@ -91,6 +91,7 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
           className="resource-kind-select"
           value={kind}
           onChange={e => setKind(e.target.value as ResourceKind)}
+          title="选择资源类型"
         >
           {KIND_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -104,6 +105,7 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
           value={q}
           onChange={e => setQ(e.target.value)}
           aria-label="Filter resources"
+          title="按名称/命名空间/值过滤，大小写不敏感"
         />
       </div>
 
@@ -154,7 +156,7 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
           className="pod-ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <button className="ctx-item" onClick={fireDescribe}>
+          <button className="ctx-item" onClick={fireDescribe} title="kubectl describe 该资源（只读）">
             Describe
           </button>
         </div>

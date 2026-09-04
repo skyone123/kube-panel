@@ -175,8 +175,9 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
           value={search}
           onChange={e => setSearch(e.target.value)}
           aria-label="Search merged logs (regex)"
+          title="正则搜索合并日志，支持上一个/下一个跳转"
         />
-        <label className="lc-field lc-check" title="Case sensitive">
+        <label className="lc-field lc-check" title="区分大小写">
           <input
             type="checkbox"
             checked={caseSensitive}
@@ -191,20 +192,20 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
           className="lc-nav-btn"
           onClick={() => setCurrentMatch(m => (m - 1 + matchIndices.length) % matchIndices.length)}
           disabled={matchIndices.length === 0}
-          title="Previous match"
+          title="上一个匹配"
         >↑</button>
         <button
           className="lc-nav-btn"
           onClick={() => setCurrentMatch(m => (m + 1) % matchIndices.length)}
           disabled={matchIndices.length === 0}
-          title="Next match"
+          title="下一个匹配"
         >↓</button>
       </div>
       <div className="lc-actions">
-        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0}>
+        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0} title="导出当前缓冲区为 .log 文件">
           Export
         </button>
-        <button className="lc-stop" onClick={handleStop}>Stop</button>
+        <button className="lc-stop" onClick={handleStop} title="停止所有日志流并关闭窗口">Stop</button>
       </div>
     </div>
   );

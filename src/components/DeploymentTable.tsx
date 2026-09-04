@@ -104,17 +104,17 @@ export function DeploymentTable({ deployments, query, onAction }: DeploymentTabl
           className="pod-ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <button className="ctx-item" onClick={() => fireAction('restart')}>
+          <button className="ctx-item" onClick={() => fireAction('restart')} title="kubectl rollout restart（滚动重启，不中断服务）">
             Restart
           </button>
-          <button className="ctx-item" onClick={() => fireAction('scale')}>
+          <button className="ctx-item" onClick={() => fireAction('scale')} title="调整副本数（scale up/down）">
             Scale…
           </button>
-          <button className="ctx-item" onClick={() => fireAction('undo')}>
+          <button className="ctx-item" onClick={() => fireAction('undo')} title="回滚到上一个修订版本">
             Undo
           </button>
           <div className="ctx-sep" />
-          <button className="ctx-item" onClick={() => fireAction('history')}>
+          <button className="ctx-item" onClick={() => fireAction('history')} title="查看 rollout 修订历史">
             History
           </button>
         </div>

@@ -50,6 +50,7 @@ function RestartPanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ct
             className="lc-btn rollout-confirm"
             disabled={mutation.isPending}
             onClick={() => mutation.mutate()}
+            title="执行 kubectl rollout restart"
           >
             {mutation.isPending ? 'Restarting…' : 'Confirm'}
           </button>
@@ -81,6 +82,7 @@ function ScalePanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxN
             min={0}
             value={replicas}
             onChange={e => setReplicas(Number(e.target.value))}
+            title="目标副本数，0=停止所有 pod（危险）"
           />
         </label>
       </div>
@@ -108,6 +110,7 @@ function ScalePanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxN
             className="lc-btn rollout-confirm"
             disabled={mutation.isPending || !valid}
             onClick={() => mutation.mutate()}
+            title="执行 kubectl scale（0=停止所有 pod）"
           >
             {mutation.isPending ? 'Scaling…' : 'Confirm'}
           </button>
@@ -141,6 +144,7 @@ function UndoPanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxNa
             placeholder="previous"
             value={revision}
             onChange={e => setRevision(e.target.value)}
+            title="回滚到此修订号；留空=回滚到上一个版本"
           />
         </label>
       </div>
@@ -165,6 +169,7 @@ function UndoPanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxNa
             className="lc-btn rollout-confirm"
             disabled={mutation.isPending || !valid}
             onClick={() => mutation.mutate()}
+            title="执行 kubectl rollout undo"
           >
             {mutation.isPending ? 'Undoing…' : 'Confirm'}
           </button>
