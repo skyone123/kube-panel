@@ -85,6 +85,9 @@ function ScalePanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxN
         </label>
       </div>
       <div className="rollout-cmd mono">{cmd}</div>
+      {replicas === 0 && (
+        <div className="rollout-result warn">Scaling to 0 stops all pods of this deployment.</div>
+      )}
       {mutation.isError && (
         <div className="rollout-result err">
           {(mutation.error as Error)?.message ?? 'unknown error'}

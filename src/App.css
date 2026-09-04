@@ -1310,6 +1310,11 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+.rollout-result.warn {
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border: 1px solid rgba(210, 153, 34, 0.30);
+}
 
 /* =========================================================================
    Port-forward panel

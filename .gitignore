@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Secrets / local env — never commit
+.env
+.env.*
+*.pem
+*.key
+
+# Local runtime data (the app writes history.db to %USERPROFILE%\.kube-panel\,
+# but guard against any .db landing in the repo dir)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
