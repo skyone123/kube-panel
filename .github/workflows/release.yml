@@ -1,0 +1,54 @@
+name: release
+
+# Trigger on version tags (v0.1.0, v1.2.3, ...) or manual run.
+# Builds the Windows .exe (NSIS installer + portable) and attaches it to a
+# GitHub Release. The release is created as a DRAFT — publish it from the
+# GitHub Releases UI once the build is green so it becomes publicly downloadable.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & release (Tauri)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'kube-panel ${{ github.ref_name }}'
+          releaseBody: |
+            Windows build of kube-panel ${{ github.ref_name }}.
+
+            Download the `.exe` installer (NSIS) or the portable bundle below.
+            Requires Windows 10/11 (WebView2 is preinstalled on Windows 11).
+            The app does not bundle `kubectl` — install it separately:
+            `winget install Kubernetes.kubectl`.
+          releaseDraft: true
+          prerelease: false

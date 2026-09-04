@@ -1,5 +1,7 @@
 # kube-panel
 
+**English** · [中文](README.zh-CN.md)
+
 A Windows-first **kubectl ops panel** — a single desktop app that turns the
 daily kubectl grind (switching contexts, finding pods, reading logs, hunting
 down ConfigMaps, replaying commands) into a keyboard-friendly GUI, plus a
@@ -219,5 +221,4 @@ See `docs/specs/2026-09-03-kube-panel-design.md` for the full spec and
 
 ## License
 
-TBD — add a `LICENSE` file before publishing (MIT or Apache-2.0 recommended
-for a Tauri/Rust project).
+[MIT](LICENSE).
