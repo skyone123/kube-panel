@@ -43,7 +43,10 @@ in one desktop app.
 | 🔀 **Multi-pod tail** | Select ≥2 pods → one merged stream with `[pod]` prefixes. |
 | 🚀 **Deployments & rollout** | Deployments tab + right-click **restart / scale / undo / history**, each behind a confirm modal showing the exact command. |
 | 🔌 **Port-forward manager** | Live session table (running / stopped / failed), confirm-before-start, stop/clear, children reaped on app exit. |
+| 🗂️ **Resource browser** | Services / Ingresses / PVC / StatefulSets / DaemonSets / Jobs / CronJobs — one kind-aware table with dynamic columns, substring filter, right-click describe. |
+| 💻 **Exec terminal** | Right-click a pod → `kubectl exec -it` in an interactive xterm.js terminal (ConPTY). Container + command picker (default `sh`), resize-aware. |
 | 🧱 **Command history** | Searchable, persisted to SQLite. **Metadata-only** — no stdout/stderr ever touches disk (kubectl output often carries secrets). |
+| 💬 **Chinese hints** | Every key control shows a concise Chinese tooltip on hover; safety-relevant controls note their non-destructive / gated nature. |
 
 <details>
 <summary><b>🎯 Right-click pod menu — full detail</b></summary>
@@ -56,6 +59,8 @@ in one desktop app.
 - **Describe** — `kubectl describe pod` text, CrashLoop/OOM keyword highlighting
 - **Events** — structured table (time / type / reason / message), filterable
   to the pod or the whole namespace
+- **Exec** — `kubectl exec -it` interactive terminal (xterm.js + ConPTY),
+  pick container + command (default `sh`)
 
 </details>
 
@@ -118,6 +123,7 @@ kube-panel/
 │  │  ├─ commands.rs          # all #[tauri::command] fns
 │  │  ├─ stream.rs            # StreamRegistry: kubectl logs -f children (single + multi)
 │  │  ├─ portforward.rs       # PfRegistry: port-forward lifecycle (monitor + stop channel)
+│  │  ├─ exec.rs              # ExecRegistry: kubectl exec -it PTY (portable-pty + reader thread)
 │  │  ├─ history.rs           # SQLite history CRUD (metadata-only)
 │  │  └─ models.rs            # JSON parsers: pods, deployments, configmaps, events
 │  ├─ tauri.conf.json
@@ -125,7 +131,8 @@ kube-panel/
 ├─ src/                       # React 18 + TS frontend
 │  ├─ App.tsx
 │  ├─ components/             # PodTable, DeploymentTable, LogViewer, MergedLogViewer,
-│  │                          # PodActionModal, RolloutModal, PortForwardPanel, …
+│  │                          # PodActionModal, RolloutModal, PortForwardPanel,
+│  │                          # ResourceBrowser, ExecTerminal, …
 │  ├─ api/tauri.ts            # invoke() wrappers + event listeners (log_chunk, pf_status)
 │  ├─ stores/appStore.ts      # zustand (namespace)
 │  └─ types.ts                # TS types mirroring Rust serde::Serialize output
@@ -192,13 +199,14 @@ See the design doc for the full security rationale (§6.4).
 - [x] **Live auto-refresh** of pod / deployment / node tables
 - [x] **Node view** (status, roles, pressure, allocatable, describe)
 - [x] **Live event stream** (`kubectl --raw` watch)
+- [x] **Resource browser** (svc / ingress / pvc / statefulset / daemonset / job / cronjob)
+- [x] **Exec terminal** (ConPTY + xterm.js, interactive `kubectl exec -it`)
+- [x] **Chinese tooltip hints** on UI controls (~66 native `title` tooltips)
 
 **Planned / deferred**
-- [ ] Exec terminal (ConPTY + xterm.js)
 - [ ] YAML apply (dry-run preview → confirm → apply)
 - [ ] Cluster health badge (`get --raw /healthz` + `auth can-i`)
 - [ ] Favorites / command snippets
-- [ ] Resource browser beyond pods/deployments/nodes (svc, ingress, pvc, …)
 - [ ] Anomaly-highlight polish (restart-spike detection, OOMKilled icon)
 - [ ] Restrictive Tauri CSP
 

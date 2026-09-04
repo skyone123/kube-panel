@@ -40,7 +40,10 @@ deployments + rollout、实时 port-forward 管理，一个桌面应用搞定。
 | 🔀 **多 pod tail** | 选 ≥2 个 pod → 合并到一个流，带 `[pod]` 前缀。 |
 | 🚀 **Deployment 与 rollout** | Deployments tab + 右键 **restart / scale / undo / history**，每个都在确认弹窗显示完整命令后执行。 |
 | 🔌 **Port-forward 管理器** | 实时会话表（running / stopped / failed）、启动前确认、停止/清除、关 app 回收子进程。 |
+| 🗂️ **资源浏览器** | Services / Ingresses / PVC / StatefulSets / DaemonSets / Jobs / CronJobs —— 一个 kind 感知表格，动态列、子串过滤、右键 describe。 |
+| 💻 **Exec 终端** | 右键 pod → `kubectl exec -it` 交互式 xterm.js 终端（ConPTY）；可选容器与命令（默认 `sh`），随窗口自适应缩放。 |
 | 🧱 **命令历史** | 可搜，存 SQLite。**只存元数据** —— stdout/stderr 绝不落盘（kubectl 输出常带敏感信息）。 |
+| 💬 **中文 tips** | 每个关键控件悬停显示简短中文提示；涉及安全的控件注明非破坏性 / 有确认门。 |
 
 <details>
 <summary><b>🎯 右键 pod 菜单 —— 完整细节</b></summary>
@@ -51,6 +54,7 @@ deployments + rollout、实时 port-forward 管理，一个桌面应用搞定。
   `env.valueFrom.configMapKeyRef` / `volumes`），按需查看 key/value、复制、导出
 - **Describe** —— `kubectl describe pod` 文本，CrashLoop/OOM 关键词高亮
 - **Events** —— 结构化表格（时间 / 类型 / 原因 / 消息），可按 pod 或整 namespace 过滤
+- **Exec** —— `kubectl exec -it` 交互式终端（xterm.js + ConPTY），可选容器与命令（默认 `sh`）
 
 </details>
 
@@ -112,6 +116,7 @@ kube-panel/
 │  │  ├─ commands.rs          # 所有 #[tauri::command] 函数
 │  │  ├─ stream.rs            # StreamRegistry: kubectl logs -f 子进程（单/多）
 │  │  ├─ portforward.rs       # PfRegistry: port-forward 生命周期（监控 + stop channel）
+│  │  ├─ exec.rs              # ExecRegistry: kubectl exec -it PTY（portable-pty + reader thread）
 │  │  ├─ history.rs           # SQLite 历史 CRUD（只存元数据）
 │  │  └─ models.rs            # JSON 解析器：pods、deployments、configmaps、events
 │  ├─ tauri.conf.json
@@ -119,7 +124,8 @@ kube-panel/
 ├─ src/                       # React 18 + TS 前端
 │  ├─ App.tsx
 │  ├─ components/             # PodTable, DeploymentTable, LogViewer, MergedLogViewer,
-│  │                          # PodActionModal, RolloutModal, PortForwardPanel, …
+│  │                          # PodActionModal, RolloutModal, PortForwardPanel,
+│  │                          # ResourceBrowser, ExecTerminal, …
 │  ├─ api/tauri.ts            # invoke() 封装 + 事件监听（log_chunk、pf_status）
 │  ├─ stores/appStore.ts      # zustand（namespace）
 │  └─ types.ts                # 与 Rust serde::Serialize 对齐的 TS 类型
@@ -178,13 +184,14 @@ kube-panel/
 - [x] **Pod / Deployment / Node 表自动刷新**
 - [x] **Node 视图**（状态、角色、压力、可分配、describe）
 - [x] **事件实时流**（`kubectl --raw` watch）
+- [x] **资源浏览器**（svc / ingress / pvc / statefulset / daemonset / job / cronjob）
+- [x] **Exec 终端**（ConPTY + xterm.js，交互式 `kubectl exec -it`）
+- [x] **中文 tips**（UI 控件 ~66 个原生 `title` 悬停提示）
 
 **计划 / 待定**
-- [ ] Exec 终端（ConPTY + xterm.js）
 - [ ] YAML apply（dry-run 预览 → 确认 → apply）
 - [ ] 集群健康徽章（`get --raw /healthz` + `auth can-i`）
 - [ ] 收藏夹 / 命令片段
-- [ ] pod/deployment/node 之外的资源浏览器（svc、ingress、pvc …）
 - [ ] 异常高亮打磨（重启突增检测、OOMKilled 图标）
 - [ ] 严格 Tauri CSP
 
