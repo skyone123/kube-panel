@@ -13,6 +13,19 @@ export type EventView = { last_timestamp: string; type_: string; reason: string;
 
 export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events';
 
+export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history';
+
+export type DeploymentView = {
+  name: string;
+  namespace: string;
+  ready: string;
+  updated: string;
+  replicas: number;
+  available: number;
+  age: string;
+  images: string[];
+};
+
 export type MultiPodTarget = { namespace: string; pod: string; container: string | null };
 
 export type HistoryEntry = { id: number | null; ts_ms: number; context: string; namespace: string | null; argv: string[]; exit_code: number | null; duration_ms: number | null; is_stream: boolean; favorite: boolean };

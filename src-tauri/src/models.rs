@@ -197,6 +197,83 @@ pub fn parse_event_list(json: &[u8]) -> std::io::Result<Vec<EventView>> {
 }
 
 // ---------------------------------------------------------------------------
+// Deployment parser
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeploymentList { pub items: Vec<DeploymentItem> }
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeploymentItem {
+    pub metadata: DeploymentMeta,
+    pub spec: DeploymentSpec,
+    #[serde(default)] pub status: DeploymentStatus,
+}
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeploymentMeta { pub name: String, pub namespace: String, pub creationTimestamp: String }
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeploymentSpec {
+    #[serde(default)] pub replicas: Option<i64>,
+    #[serde(default)] pub template: DepTemplate,
+}
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DepTemplate { #[serde(default)] pub spec: DepTemplateSpec }
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DepTemplateSpec { #[serde(default)] pub containers: Vec<DepContainer> }
+#[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
+pub struct DepContainer { #[serde(default)] pub name: String, #[serde(default)] pub image: String }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
+pub struct DeploymentStatus {
+    #[serde(default)] pub replicas: i64,
+    #[serde(default)] pub readyReplicas: i64,
+    #[serde(default)] pub updatedReplicas: i64,
+    #[serde(default)] pub availableReplicas: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeploymentView {
+    pub name: String, pub namespace: String,
+    pub ready: String, pub updated: String,
+    pub replicas: i64, pub available: i64,
+    pub age: String, pub images: Vec<String>,
+}
+
+pub fn parse_deployment_list(json: &[u8]) -> std::io::Result<Vec<DeploymentView>> {
+    let list: DeploymentList = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let now = Utc::now();
+    let mut out = Vec::with_capacity(list.items.len());
+    for d in list.items {
+        let desired = d.spec.replicas.unwrap_or(1);
+        let ready = d.status.readyReplicas;
+        let updated = d.status.updatedReplicas;
+        let available = d.status.availableReplicas;
+        let age = age_string(&d.metadata.creationTimestamp, now);
+        let mut images: Vec<String> = d.spec.template.spec.containers.iter()
+            .map(|c| c.image.clone())
+            .filter(|s| !s.is_empty())
+            .collect();
+        // dedup + sort
+        let mut seen = HashSet::new();
+        images.retain(|s| seen.insert(s.clone()));
+        images.sort();
+        out.push(DeploymentView {
+            name: d.metadata.name,
+            namespace: d.metadata.namespace,
+            ready: format!("{}/{}", ready, desired),
+            updated: format!("{}/{}", updated, desired),
+            replicas: desired,
+            available,
+            age,
+            images,
+        });
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Pod-configmap-refs parser
 // ---------------------------------------------------------------------------
 
@@ -328,6 +405,38 @@ mod tests {
         assert_eq!(views[0].involved_name, "crashy");
         assert_eq!(views[1].last_timestamp, "2024-01-01T10:00:00Z");
         assert_eq!(views[1].involved_name, "nginx");
+    }
+
+    #[test]
+    fn parses_deployment_list_ready_images() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"web","namespace":"default","creationTimestamp":"2024-01-01T00:00:00Z"},
+                 "spec":{"replicas":3,"template":{"spec":{"containers":[{"name":"web","image":"nginx:1.25"}]}}},
+                 "status":{"replicas":3,"readyReplicas":2,"updatedReplicas":3,"availableReplicas":2}},
+                {"metadata":{"name":"api","namespace":"prod","creationTimestamp":"2024-01-01T00:00:00Z"},
+                 "spec":{"replicas":1,"template":{"spec":{"containers":[
+                    {"name":"a","image":"a:v1"},{"name":"b","image":"a:v1"},{"name":"c","image":"b:v2"}
+                 ]}}}}
+            ]
+        }"#;
+        let views = parse_deployment_list(json).unwrap();
+        assert_eq!(views.len(), 2);
+        let web = views.iter().find(|v| v.name == "web").unwrap();
+        assert_eq!(web.namespace, "default");
+        assert_eq!(web.ready, "2/3");
+        assert_eq!(web.updated, "3/3");
+        assert_eq!(web.replicas, 3);
+        assert_eq!(web.available, 2);
+        assert!(!web.age.is_empty());
+        assert_eq!(web.images, vec!["nginx:1.25"]);
+        let api = views.iter().find(|v| v.name == "api").unwrap();
+        assert_eq!(api.namespace, "prod");
+        assert_eq!(api.ready, "0/1");
+        assert_eq!(api.updated, "0/1");
+        assert_eq!(api.replicas, 1);
+        assert_eq!(api.available, 0);
+        assert_eq!(api.images, vec!["a:v1", "b:v2"]);
     }
 
     #[test]

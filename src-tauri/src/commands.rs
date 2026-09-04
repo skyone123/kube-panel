@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::kubeconfig::{self, ContextView};
 use crate::history::{History, HistoryEntry};
 use crate::runtime::{build_history_entry, KubeRuntime};
-use crate::models::{self, PodView};
+use crate::models::{self, PodView, DeploymentView};
 use crate::stream::StreamRegistry;
 
 #[tauri::command]
@@ -292,4 +292,74 @@ pub async fn get_configmap(
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_configmap_data(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_deployments(
+    context: String, namespace: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<DeploymentView>, String> {
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "deploy", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "deploy", "-o", "json"]
+    };
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_deployment_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rollout_restart(
+    context: String, namespace: String, name: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<(), String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &["rollout", "restart", "deployment", &name]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rollout_scale(
+    context: String, namespace: String, name: String, replicas: i64,
+    rt: State<'_, KubeRuntime>,
+) -> Result<(), String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let scale = format!("--replicas={}", replicas);
+    let res = rt.run(&context, ns_opt, &["scale", "deployment", &name, &scale]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rollout_undo(
+    context: String, namespace: String, name: String, to_revision: Option<i64>,
+    rt: State<'_, KubeRuntime>,
+) -> Result<(), String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let mut args: Vec<String> = vec!["rollout".into(), "undo".into(), format!("deployment/{}", name)];
+    if let Some(r) = to_revision { args.push(format!("--to-revision={}", r)); }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let res = rt.run(&context, ns_opt, &arg_refs).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rollout_history(
+    context: String, namespace: String, name: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<String, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let args: Vec<String> = vec!["rollout".into(), "history".into(), format!("deployment/{}", name)];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let res = rt.run(&context, ns_opt, &arg_refs).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(res.stdout)
 }

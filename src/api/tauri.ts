@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -50,3 +50,15 @@ export const streamMultiPodLogs = (
 export function onLogChunk(cb: (chunk: LogChunk) => void): Promise<UnlistenFn> {
   return listen<LogChunk>('log_chunk', (e) => cb(e.payload));
 }
+
+// Deployment + rollout operations
+export const getDeployments = (context: string, namespace: string) =>
+  invoke<DeploymentView[]>('get_deployments', { context, namespace });
+export const rolloutRestart = (context: string, namespace: string, name: string) =>
+  invoke<void>('rollout_restart', { context, namespace, name });
+export const rolloutScale = (context: string, namespace: string, name: string, replicas: number) =>
+  invoke<void>('rollout_scale', { context, namespace, name, replicas });
+export const rolloutUndo = (context: string, namespace: string, name: string, toRevision: number | null) =>
+  invoke<void>('rollout_undo', { context, namespace, name, toRevision });
+export const rolloutHistory = (context: string, namespace: string, name: string) =>
+  invoke<string>('rollout_history', { context, namespace, name });

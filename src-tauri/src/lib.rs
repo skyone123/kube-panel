@@ -41,6 +41,11 @@ pub fn run() {
             commands::get_configmaps,
             commands::get_pod_configmaps,
             commands::get_configmap,
+            commands::get_deployments,
+            commands::rollout_restart,
+            commands::rollout_scale,
+            commands::rollout_undo,
+            commands::rollout_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

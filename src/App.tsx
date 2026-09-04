@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
+import { DeploymentTable } from './components/DeploymentTable';
 import { LogViewer } from './components/LogViewer';
 import { MergedLogViewer } from './components/MergedLogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
 import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { PodActionModal } from './components/PodActionModal';
+import { RolloutModal } from './components/RolloutModal';
 import { useAppStore } from './stores/appStore';
-import { getPods, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
-import type { PodView, PodActionMode } from './types';
+import { getPods, getDeployments, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
+import type { PodView, PodActionMode, DeploymentView, RolloutMode } from './types';
 import './App.css';
 
 export default function App() {
@@ -19,6 +21,8 @@ export default function App() {
   const [histQuery, setHistQuery] = useState('');
   const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
   const [merge, setMerge] = useState<{ id: string; pods: PodView[] } | null>(null);
+  const [resourceTab, setResourceTab] = useState<'pods' | 'deployments'>('pods');
+  const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -32,9 +36,15 @@ export default function App() {
     queryFn: () => getPods(ctxName, namespace),
     enabled: !!ctxName,
   });
+  const { data: deployments = [] } = useQuery({
+    queryKey: ['deployments', ctxName, namespace],
+    queryFn: () => getDeployments(ctxName, namespace),
+    enabled: !!ctxName,
+  });
   const { data: history = [] } = useQuery({ queryKey: ['history'], queryFn: () => listHistory(100) });
 
   const podCount = pods.length;
+  const deployCount = deployments.length;
   const histCount = history.length;
 
   return (
@@ -69,19 +79,33 @@ export default function App() {
           <section className="card pod-card" id="pods">
             <div className="card-head">
               <h2>Pods</h2>
-              <span className="head-meta">{podCount} running{podCount === 1 ? '' : ''}</span>
+              <div className="resource-tabs">
+                <button
+                  className={`resource-tab${resourceTab === 'pods' ? ' active' : ''}`}
+                  onClick={() => setResourceTab('pods')}
+                >Pods</button>
+                <button
+                  className={`resource-tab${resourceTab === 'deployments' ? ' active' : ''}`}
+                  onClick={() => setResourceTab('deployments')}
+                >Deployments</button>
+              </div>
+              <span className="head-meta">{resourceTab === 'pods' ? `${podCount} running` : `${deployCount} deployments`}</span>
               <span className="spacer" />
             </div>
             <div className="pod-table-wrap">
-              <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onMergeTail={async (pods) => {
-                try {
-                  const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
-                  const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);
-                  setMerge({ id, pods });
-                } catch {
-                  /* noop */
-                }
-              }} />
+              {resourceTab === 'pods' ? (
+                <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onMergeTail={async (pods) => {
+                  try {
+                    const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
+                    const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);
+                    setMerge({ id, pods });
+                  } catch {
+                    /* noop */
+                  }
+                }} />
+              ) : (
+                <DeploymentTable deployments={deployments} query={q} onAction={(deploy, mode) => setRolloutAction({ deploy, mode })} />
+              )}
             </div>
           </section>
 
@@ -127,6 +151,7 @@ export default function App() {
         </div>
       </div>
       {podAction && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
+      {rolloutAction && <RolloutModal deploy={rolloutAction.deploy} mode={rolloutAction.mode} ctxName={ctxName} onClose={() => setRolloutAction(null)} />}
       {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
     </div>
   );
