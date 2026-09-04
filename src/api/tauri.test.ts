@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory, startPortForward, stopPortForward, listPortForwards, clearPortForward } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -53,5 +53,29 @@ describe('api wrappers', () => {
     (invoke as any).mockResolvedValue('');
     await rolloutHistory('dev', 'default', 'web');
     expect(invoke).toHaveBeenCalledWith('rollout_history', { context: 'dev', namespace: 'default', name: 'web' });
+  });
+
+  it('startPortForward passes context + namespace + target + ports', async () => {
+    (invoke as any).mockResolvedValue('pf-0');
+    await startPortForward('dev', 'default', 'pod/nginx', 8080, 80);
+    expect(invoke).toHaveBeenCalledWith('start_port_forward', { context: 'dev', namespace: 'default', target: 'pod/nginx', localPort: 8080, remotePort: 80 });
+  });
+
+  it('stopPortForward passes id', async () => {
+    (invoke as any).mockResolvedValue(undefined);
+    await stopPortForward('pf-0');
+    expect(invoke).toHaveBeenCalledWith('stop_port_forward', { id: 'pf-0' });
+  });
+
+  it('listPortForwards calls invoke with list_port_forwards', async () => {
+    (invoke as any).mockResolvedValue([]);
+    await listPortForwards();
+    expect(invoke).toHaveBeenCalledWith('list_port_forwards');
+  });
+
+  it('clearPortForward passes id', async () => {
+    (invoke as any).mockResolvedValue(undefined);
+    await clearPortForward('pf-0');
+    expect(invoke).toHaveBeenCalledWith('clear_port_forward', { id: 'pf-0' });
   });
 });

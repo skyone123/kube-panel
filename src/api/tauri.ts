@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -62,3 +62,15 @@ export const rolloutUndo = (context: string, namespace: string, name: string, to
   invoke<void>('rollout_undo', { context, namespace, name, toRevision });
 export const rolloutHistory = (context: string, namespace: string, name: string) =>
   invoke<string>('rollout_history', { context, namespace, name });
+
+// Port-forward operations
+export const startPortForward = (context: string, namespace: string, target: string, localPort: number, remotePort: number) =>
+  invoke<string>('start_port_forward', { context, namespace, target, localPort, remotePort });
+export const stopPortForward = (id: string) => invoke<void>('stop_port_forward', { id });
+export const listPortForwards = () => invoke<PfSessionView[]>('list_port_forwards');
+export const clearPortForward = (id: string) => invoke<void>('clear_port_forward', { id });
+
+// Subscribe to pf_status events; returns the unlisten handle.
+export function onPfStatus(cb: (v: PfSessionView) => void): Promise<UnlistenFn> {
+  return listen<PfSessionView>('pf_status', (e) => cb(e.payload));
+}

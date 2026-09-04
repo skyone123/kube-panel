@@ -29,3 +29,15 @@ export type DeploymentView = {
 export type MultiPodTarget = { namespace: string; pod: string; container: string | null };
 
 export type HistoryEntry = { id: number | null; ts_ms: number; context: string; namespace: string | null; argv: string[]; exit_code: number | null; duration_ms: number | null; is_stream: boolean; favorite: boolean };
+
+export type PfSessionView = {
+  id: string;
+  context: string;
+  namespace: string;
+  target: string;
+  local_port: number;
+  remote_port: number;
+  started_at: number;
+  status: string;
+  message: string;
+};

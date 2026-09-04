@@ -4,11 +4,13 @@ mod history;
 mod kubeconfig;
 mod kubectl;
 mod models;
+mod portforward;
 mod runtime;
 mod stream;
 
 use history::History;
 use kubectl::Kubectl;
+use portforward::PfRegistry;
 use runtime::KubeRuntime;
 use stream::StreamRegistry;
 
@@ -24,6 +26,7 @@ pub fn run() {
         .manage(runtime)
         .manage(history)
         .manage(StreamRegistry::new())
+        .manage(PfRegistry::new())
         .invoke_handler(tauri::generate_handler![
             commands::list_contexts,
             commands::current_context,
@@ -46,6 +49,10 @@ pub fn run() {
             commands::rollout_scale,
             commands::rollout_undo,
             commands::rollout_history,
+            commands::start_port_forward,
+            commands::stop_port_forward,
+            commands::list_port_forwards,
+            commands::clear_port_forward,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

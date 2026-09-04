@@ -4,6 +4,7 @@ use crate::history::{History, HistoryEntry};
 use crate::runtime::{build_history_entry, KubeRuntime};
 use crate::models::{self, PodView, DeploymentView};
 use crate::stream::StreamRegistry;
+use crate::portforward::PfRegistry;
 
 #[tauri::command]
 pub fn list_contexts() -> Result<Vec<ContextView>, String> {
@@ -362,4 +363,78 @@ pub async fn rollout_history(
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     Ok(res.stdout)
+}
+
+/// Start a `kubectl port-forward` child process. Returns the session id.
+/// The child's stderr is drained by the PfRegistry monitor; status updates
+/// are emitted to the frontend as `pf_status` events `{ PfSessionView }`.
+///
+/// History: ONE row recorded with `is_stream=true`, `exit_code=None` (final
+/// exit code not known at start). No chunk text is written to history.
+#[tauri::command]
+pub async fn start_port_forward(
+    context: String,
+    namespace: String,
+    target: String,
+    local_port: u16,
+    remote_port: u16,
+    rt: State<'_, KubeRuntime>,
+    registry: State<'_, PfRegistry>,
+    history: State<'_, History>,
+    app: AppHandle,
+) -> Result<String, String> {
+    let port_arg = format!("{}:{}", local_port, remote_port);
+    let args: Vec<String> = vec!["port-forward".into(), target.clone(), port_arg.clone()];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    // Record ONE history row (is_stream=true, exit_code=None).
+    let hist_argv: Vec<&str> = vec!["port-forward", &target, &port_arg];
+    let entry = build_history_entry(&context, ns_opt, &hist_argv, None, 0, true);
+    if let Err(e) = history.insert(&entry) {
+        eprintln!("[kube-panel] history insert failed for pf: {e}");
+    }
+
+    let id = crate::portforward::new_pf_id();
+    let view = crate::portforward::PfSessionView {
+        id: id.clone(),
+        context: context.clone(),
+        namespace: namespace.clone(),
+        target: target.clone(),
+        local_port,
+        remote_port,
+        started_at: chrono::Utc::now().timestamp_millis(),
+        status: "running".into(),
+        message: String::new(),
+    };
+    let id_ret = registry.start(id, child, view, move |v| {
+        let _ = app.emit("pf_status", v);
+    });
+    Ok(id_ret)
+}
+
+/// Stop a running port-forward session by id. Signals the monitor to kill +
+/// reap the child. No-op if the session is already dead or not found.
+#[tauri::command]
+pub fn stop_port_forward(id: String, registry: State<'_, PfRegistry>) -> Result<(), String> {
+    registry.stop(&id);
+    Ok(())
+}
+
+/// List all port-forward sessions (running + dead).
+#[tauri::command]
+pub fn list_port_forwards(registry: State<'_, PfRegistry>) -> Result<Vec<crate::portforward::PfSessionView>, String> {
+    Ok(registry.list())
+}
+
+/// Remove a DEAD port-forward session from the list (only valid if not running).
+#[tauri::command]
+pub fn clear_port_forward(id: String, registry: State<'_, PfRegistry>) -> Result<(), String> {
+    registry.remove(&id);
+    Ok(())
 }

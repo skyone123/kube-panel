@@ -1310,3 +1310,180 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* =========================================================================
+   Port-forward panel
+   ========================================================================= */
+.topbar-pf-btn {
+  padding: 5px 12px;
+  background: rgba(56, 139, 253, 0.08);
+  color: var(--accent-bright);
+  border: 1px solid rgba(56, 139, 253, 0.30);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.topbar-pf-btn:hover {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: var(--accent);
+}
+
+.pf-sessions {
+  max-height: 320px;
+  overflow: auto;
+}
+.pf-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.pf-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-elevated);
+  text-align: left;
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.pf-table tbody td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text);
+  white-space: nowrap;
+}
+.pf-table tbody tr:last-child td { border-bottom: none; }
+.pf-table tbody tr:hover { background: var(--bg-hover); }
+.pf-table .pf-target { font-weight: 600; }
+.pf-table .pf-ns { color: var(--text-secondary); }
+.pf-table .pf-ports { color: var(--accent-bright); }
+.pf-table .pf-rel { color: var(--text-muted); }
+.pf-table .pf-actions { text-align: right; white-space: nowrap; }
+.pf-stop-btn {
+  color: var(--status-error) !important;
+  border-color: rgba(248, 81, 73, 0.35) !important;
+}
+.pf-stop-btn:hover {
+  background: var(--status-error-bg) !important;
+  border-color: var(--status-error) !important;
+}
+.pf-clear-btn {
+  color: var(--text-muted) !important;
+}
+.pf-message {
+  font-size: 10.5px;
+  color: var(--status-error);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.pf-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  line-height: 1.5;
+}
+.pf-status-pill::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pf-status-pill.running {
+  color: var(--status-ok);
+  background: var(--status-ok-bg);
+}
+.pf-status-pill.running::before {
+  background: var(--status-ok);
+  box-shadow: 0 0 5px rgba(63, 185, 80, 0.6);
+}
+.pf-status-pill.failed {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+}
+.pf-status-pill.failed::before {
+  background: var(--status-error);
+  box-shadow: 0 0 5px rgba(248, 81, 73, 0.7);
+}
+.pf-status-pill.stopped {
+  color: var(--text-muted);
+  background: rgba(110, 118, 129, 0.10);
+}
+.pf-status-pill.stopped::before { background: var(--text-muted); }
+
+.pf-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.pf-form {
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pf-input {
+  width: 72px;
+  padding: 5px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pf-input.pf-input-wide {
+  width: 180px;
+}
+.pf-input:hover { border-color: #484f58; }
+.pf-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.20);
+}
+.pf-arrow {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding-bottom: 6px;
+}
+.pf-start-btn {
+  margin-left: 4px;
+}
+.pf-warn {
+  font-size: 11px;
+  color: var(--status-warn);
+  padding: 2px 0;
+}
+.pf-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

@@ -9,6 +9,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { PodActionModal } from './components/PodActionModal';
 import { RolloutModal } from './components/RolloutModal';
+import { PortForwardPanel } from './components/PortForwardPanel';
 import { useAppStore } from './stores/appStore';
 import { getPods, getDeployments, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
 import type { PodView, PodActionMode, DeploymentView, RolloutMode } from './types';
@@ -23,6 +24,7 @@ export default function App() {
   const [merge, setMerge] = useState<{ id: string; pods: PodView[] } | null>(null);
   const [resourceTab, setResourceTab] = useState<'pods' | 'deployments'>('pods');
   const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
+  const [showPf, setShowPf] = useState(false);
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -56,6 +58,7 @@ export default function App() {
             <span className="ctx-label">CONTEXT</span>
             <span className={`ctx-name${ctxName ? '' : ' empty'}`}>{ctxName || '— no context —'}</span>
             <NamespaceSwitcher />
+            <button className="topbar-pf-btn" onClick={() => setShowPf(true)}>Port-forward</button>
           </div>
           <div className="topbar-divider" />
           <div className="topbar-filter">
@@ -153,6 +156,7 @@ export default function App() {
       {podAction && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
       {rolloutAction && <RolloutModal deploy={rolloutAction.deploy} mode={rolloutAction.mode} ctxName={ctxName} onClose={() => setRolloutAction(null)} />}
       {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
+      {showPf && <PortForwardPanel ctxName={ctxName} namespace={namespace} onClose={() => setShowPf(false)} />}
     </div>
   );
 }
