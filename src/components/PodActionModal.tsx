@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, listContexts } from '../api/tauri';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts } from '../api/tauri';
 
 interface PodActionModalProps {
   pod: PodView;
@@ -18,6 +18,7 @@ function modeTitle(mode: PodActionMode): string {
     case 'configmaps': return 'ConfigMaps';
     case 'describe': return 'Describe';
     case 'events': return 'Events';
+    case 'yaml': return 'YAML';
   }
 }
 
@@ -303,6 +304,68 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
   );
 }
 
+function YamlPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['pod-yaml', ctxName, pod.namespace, pod.name],
+    queryFn: () => getPodYaml(ctxName, pod.namespace, pod.name),
+    enabled: !!ctxName,
+  });
+
+  const handleCopy = () => {
+    if (data) navigator.clipboard.writeText(data);
+  };
+
+  const handleExport = () => {
+    if (!data) return;
+    const blob = new Blob([data], { type: 'text/yaml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${pod.name}.yaml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  if (isLoading) return <div className="pod-modal-loading">Loading YAML…</div>;
+  if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
+  if (!data) return <div className="pod-modal-empty">No YAML output.</div>;
+
+  const lines = data.split('\n');
+
+  return (
+    <>
+      <div className="yaml-actions">
+        <button className="ctx-item" onClick={handleCopy}>Copy</button>
+        <button className="ctx-item" onClick={handleExport}>Export</button>
+      </div>
+      <pre className="describe-output mono">
+        {lines.map((line, i) => {
+          const trimmed = line.trimStart();
+          // comment line
+          if (trimmed.startsWith('#')) {
+            return <div key={i} className="describe-line yaml-comment">{line}</div>;
+          }
+          // key: value — split on first colon
+          const colonIdx = line.indexOf(':');
+          if (colonIdx > 0) {
+            const key = line.slice(0, colonIdx);
+            const rest = line.slice(colonIdx);
+            return (
+              <div key={i} className="describe-line">
+                <span className="yaml-key">{key}</span>
+                <span>{rest}</span>
+              </div>
+            );
+          }
+          return <div key={i} className="describe-line">{line}</div>;
+        })}
+      </pre>
+    </>
+  );
+}
+
 export function PodActionModal({ pod, mode, onClose }: PodActionModalProps) {
   const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
   const ctxName = contexts.find(c => c.current)?.name ?? '';
@@ -329,6 +392,7 @@ export function PodActionModal({ pod, mode, onClose }: PodActionModalProps) {
           {mode === 'configmaps' && <ConfigmapsPanel pod={pod} ctxName={ctxName} />}
           {mode === 'describe' && <DescribePanel pod={pod} ctxName={ctxName} />}
           {mode === 'events' && <EventsPanel pod={pod} ctxName={ctxName} />}
+          {mode === 'yaml' && <YamlPanel pod={pod} ctxName={ctxName} />}
         </div>
       </div>
     </div>

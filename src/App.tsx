@@ -25,6 +25,8 @@ export default function App() {
   const [resourceTab, setResourceTab] = useState<'pods' | 'deployments'>('pods');
   const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
   const [showPf, setShowPf] = useState(false);
+  const [live, setLive] = useState(true);
+  const refetchInterval = live ? 5000 : false;
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -37,11 +39,13 @@ export default function App() {
     queryKey: ['pods', ctxName, namespace],
     queryFn: () => getPods(ctxName, namespace),
     enabled: !!ctxName,
+    refetchInterval,
   });
   const { data: deployments = [] } = useQuery({
     queryKey: ['deployments', ctxName, namespace],
     queryFn: () => getDeployments(ctxName, namespace),
     enabled: !!ctxName,
+    refetchInterval,
   });
   const { data: history = [] } = useQuery({ queryKey: ['history'], queryFn: () => listHistory(100) });
 
@@ -92,6 +96,14 @@ export default function App() {
                   onClick={() => setResourceTab('deployments')}
                 >Deployments</button>
               </div>
+              <button
+                className={`live-toggle${live ? ' live' : ' paused'}`}
+                onClick={() => setLive(v => !v)}
+                title={live ? 'Auto-refresh every 5s (click to pause)' : 'Auto-refresh paused (click to resume)'}
+              >
+                <span className="live-dot" />
+                {live ? 'Live' : 'Paused'}
+              </button>
               <span className="head-meta">{resourceTab === 'pods' ? `${podCount} running` : `${deployCount} deployments`}</span>
               <span className="spacer" />
             </div>

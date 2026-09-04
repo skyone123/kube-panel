@@ -14,6 +14,9 @@ export const searchHistory = (query: string, limit: number) => invoke<HistoryEnt
 
 export const describePod = (context: string, namespace: string, pod: string) =>
   invoke<string>('describe_pod', { context, namespace, pod });
+export const getPodYaml = (context: string, namespace: string, pod: string) =>
+  invoke<string>('get_pod_yaml', { context, namespace, pod });
+
 export const getEvents = (context: string, namespace: string) =>
   invoke<EventView[]>('get_events', { context, namespace });
 export const getConfigmaps = (context: string, namespace: string) =>

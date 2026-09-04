@@ -240,6 +240,18 @@ pub async fn describe_pod(
 }
 
 #[tauri::command]
+pub async fn get_pod_yaml(
+    context: String, namespace: String, pod: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<String, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &["get", "pod", &pod, "-o", "yaml"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(res.stdout)
+}
+
+#[tauri::command]
 pub async fn get_events(
     context: String, namespace: String,
     rt: State<'_, KubeRuntime>,

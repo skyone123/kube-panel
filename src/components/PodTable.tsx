@@ -209,6 +209,9 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           <button className="ctx-item" onClick={() => fireAction('configmaps')}>
             Show ConfigMaps
           </button>
+          <button className="ctx-item" onClick={() => fireAction('yaml')}>
+            View YAML
+          </button>
           <button className="ctx-item" onClick={() => fireAction('describe')}>
             Describe
           </button>

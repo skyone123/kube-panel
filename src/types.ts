@@ -11,7 +11,7 @@ export type ConfigMapDataView = { name: string; entries: ConfigMapEntry[] };
 
 export type EventView = { last_timestamp: string; type_: string; reason: string; message: string; involved_name: string };
 
-export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events';
+export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events' | 'yaml';
 
 export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history';
 

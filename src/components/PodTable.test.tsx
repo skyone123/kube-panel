@@ -82,6 +82,19 @@ describe('PodTable', () => {
     );
   });
 
+  it('View YAML fires onPodAction with yaml mode', () => {
+    const onPodAction = vi.fn();
+    render(<PodTable pods={pods} query="" onPodAction={onPodAction} />);
+    const row = screen.getByText('nginx').closest('tr')!;
+    fireEvent.contextMenu(row);
+    expect(screen.getByText('View YAML')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('View YAML'));
+    expect(onPodAction).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'nginx' }),
+      'yaml' as PodActionMode,
+    );
+  });
+
   it('Escape closes context menu', () => {
     render(<PodTable pods={pods} query="" />);
     const row = screen.getByText('nginx').closest('tr')!;

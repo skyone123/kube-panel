@@ -40,6 +40,7 @@ pub fn run() {
             commands::stream_multi_pod_logs,
             commands::stop_log_stream,
             commands::describe_pod,
+            commands::get_pod_yaml,
             commands::get_events,
             commands::get_configmaps,
             commands::get_pod_configmaps,

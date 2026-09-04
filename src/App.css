@@ -1492,3 +1492,62 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   flex-direction: column;
   gap: 10px;
 }
+
+/* =========================================================================
+   Live auto-refresh toggle
+   ========================================================================= */
+.live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.live-toggle:hover {
+  background: var(--bg-hover);
+}
+.live-toggle.live {
+  color: var(--status-ok);
+}
+.live-toggle.paused {
+  color: var(--text-muted);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.live-toggle.live .live-dot {
+  background: var(--status-ok);
+  box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+}
+.live-toggle.paused .live-dot {
+  background: var(--text-muted);
+}
+
+/* =========================================================================
+   YAML panel
+   ========================================================================= */
+.yaml-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: rgba(255, 255, 255, 0.015);
+}
+.yaml-key {
+  color: var(--accent-bright);
+}
+.yaml-comment {
+  color: var(--text-muted);
+}
