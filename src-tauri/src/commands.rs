@@ -523,3 +523,31 @@ pub async fn describe_node(context: String, name: String, rt: State<'_, KubeRunt
     if res.exit_code != 0 { return Err(res.stderr); }
     Ok(res.stdout)
 }
+
+#[tauri::command]
+pub async fn get_resources(
+    context: String, namespace: String, kind: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<crate::models::ResourceListView, String> {
+    let mut args: Vec<String> = vec!["get".into(), kind.clone()];
+    if namespace.is_empty() { args.push("--all-namespaces".into()); }
+    args.push("-o".into()); args.push("json".into());
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &arg_refs).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_resources(res.stdout.as_bytes(), &kind).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn describe_resource(
+    context: String, namespace: String, kind: String, name: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<String, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let args: Vec<String> = vec!["describe".into(), kind, name];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let res = rt.run(&context, ns_opt, &arg_refs).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(res.stdout)
+}

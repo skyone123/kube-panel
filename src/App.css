@@ -1656,3 +1656,34 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 .yaml-comment {
   color: var(--text-muted);
 }
+
+/* =========================================================================
+   Resource browser
+   ========================================================================= */
+.resource-browser-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.resource-kind-select {
+  background: var(--bg-active);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+.resource-kind-select:focus {
+  outline: none;
+  border-color: var(--accent-bright);
+}
+.resource-browser-filter {
+  width: 200px;
+}
+.resource-table th,
+.resource-table td {
+  white-space: nowrap;
+}

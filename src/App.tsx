@@ -12,6 +12,7 @@ import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { PodActionModal } from './components/PodActionModal';
 import { RolloutModal } from './components/RolloutModal';
 import { PortForwardPanel } from './components/PortForwardPanel';
+import { ResourceBrowser } from './components/ResourceBrowser';
 import { useAppStore } from './stores/appStore';
 import { getPods, getDeployments, getNodes, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
 import type { PodView, PodActionMode, DeploymentView, RolloutMode, NodeView } from './types';
@@ -24,7 +25,7 @@ export default function App() {
   const [histQuery, setHistQuery] = useState('');
   const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
   const [merge, setMerge] = useState<{ id: string; pods: PodView[] } | null>(null);
-  const [resourceTab, setResourceTab] = useState<'pods' | 'deployments' | 'nodes'>('pods');
+  const [resourceTab, setResourceTab] = useState<'pods' | 'deployments' | 'nodes' | 'more'>('pods');
   const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
   const [nodeDescribe, setNodeDescribe] = useState<{ node: NodeView } | null>(null);
   const [showPf, setShowPf] = useState(false);
@@ -108,6 +109,10 @@ export default function App() {
                   className={`resource-tab${resourceTab === 'nodes' ? ' active' : ''}`}
                   onClick={() => setResourceTab('nodes')}
                 >Nodes</button>
+                <button
+                  className={`resource-tab${resourceTab === 'more' ? ' active' : ''}`}
+                  onClick={() => setResourceTab('more')}
+                >More</button>
               </div>
               <button
                 className={`live-toggle${live ? ' live' : ' paused'}`}
@@ -118,7 +123,7 @@ export default function App() {
                 {live ? 'Live' : 'Paused'}
               </button>
               <span className="head-meta">
-                {resourceTab === 'pods' ? `${podCount} running` : resourceTab === 'deployments' ? `${deployCount} deployments` : `${nodeCount} nodes`}
+                {resourceTab === 'pods' ? `${podCount} running` : resourceTab === 'deployments' ? `${deployCount} deployments` : resourceTab === 'nodes' ? `${nodeCount} nodes` : 'Browse resources'}
               </span>
               <span className="spacer" />
             </div>
@@ -135,8 +140,10 @@ export default function App() {
                 }} />
               ) : resourceTab === 'deployments' ? (
                 <DeploymentTable deployments={deployments} query={q} onAction={(deploy, mode) => setRolloutAction({ deploy, mode })} />
-              ) : (
+              ) : resourceTab === 'nodes' ? (
                 <NodeTable nodes={nodes} query={q} onDescribe={node => setNodeDescribe({ node })} />
+              ) : (
+                <ResourceBrowser ctxName={ctxName} namespace={namespace} live={live} />
               )}
             </div>
           </section>

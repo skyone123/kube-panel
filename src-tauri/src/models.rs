@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use chrono::{DateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PodList { pub items: Vec<Pod> }
@@ -554,6 +555,252 @@ pub fn parse_watch_event_line(json: &[u8]) -> std::io::Result<EventView> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Generic kind-aware resource parser (svc/ingress/pvc/sts/daemonset/job/cronjob)
+// ---------------------------------------------------------------------------
+
+/// A single resource row. `values` aligns 1:1 with the `columns` of the `ResourceListView`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResourceRow {
+    pub name: String,
+    pub namespace: String,
+    pub age: String,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResourceListView {
+    /// Kind-specific column headers (NOT name/ns/age — those are fixed)
+    pub columns: Vec<String>,
+    pub rows: Vec<ResourceRow>,
+}
+
+/// Returns the kind-specific column headers. Unknown kind → empty vec.
+fn kind_columns(kind: &str) -> Vec<&'static str> {
+    match kind {
+        "svc" => vec!["TYPE", "CLUSTER-IP", "EXTERNAL-IP", "PORT(S)"],
+        "ingress" => vec!["CLASS", "HOSTS", "ADDRESS", "PORTS"],
+        "pvc" => vec!["STATUS", "VOLUME", "CAPACITY", "STORAGECLASS", "ACCESS MODES"],
+        "sts" => vec!["READY", "REPLICAS", "UPDATE"],
+        "daemonset" => vec!["DESIRED", "READY", "UP-TO-DATE"],
+        "job" => vec!["COMPLETIONS", "DURATION", "SUCCEEDED"],
+        "cronjob" => vec!["SCHEDULE", "SUSPEND", "LAST SCHEDULE"],
+        _ => vec![],
+    }
+}
+
+/// Extract a string from a JSON value, falling back to "".
+fn val_str(v: &Value) -> String {
+    v.as_str().unwrap_or("").to_string()
+}
+
+/// Extract a number as a string from a JSON value, falling back to "0".
+fn val_num(v: &Value) -> String {
+    v.as_i64().map(|n| n.to_string()).unwrap_or_else(|| "0".into())
+}
+
+/// Extract kind-specific field values from a single item JSON.
+fn extract_values(kind: &str, item: &Value) -> Vec<String> {
+    let spec = item.get("spec");
+    let status = item.get("status");
+    let metadata = item.get("metadata");
+    let empty = Value::Null;
+    let spec = spec.unwrap_or(&empty);
+    let status = status.unwrap_or(&empty);
+    let metadata = metadata.unwrap_or(&empty);
+    match kind {
+        "svc" => {
+            let svc_type = val_str(spec.get("type").filter(|v| !v.is_null()).unwrap_or(&Value::String("ClusterIP".into())));
+            let cluster_ip = val_str(spec.get("clusterIP").unwrap_or(&Value::Null));
+            let external_ip = {
+                let ext = spec.get("externalIPs");
+                if let Some(arr) = ext.and_then(|v| v.as_array()) {
+                    if !arr.is_empty() {
+                        arr.iter().map(|v| val_str(v)).collect::<Vec<_>>().join(",")
+                    } else {
+                        "<none>".into()
+                    }
+                } else if let Some(ing) = status.get("loadBalancer").and_then(|lb| lb.get("ingress")).and_then(|v| v.as_array()) {
+                    if ing.is_empty() {
+                        "<none>".into()
+                    } else {
+                        ing.iter().map(|v| {
+                            v.get("ip").and_then(|x| x.as_str())
+                                .or_else(|| v.get("hostname").and_then(|x| x.as_str()))
+                                .unwrap_or("").to_string()
+                        }).collect::<Vec<_>>().join(",")
+                    }
+                } else {
+                    "<none>".into()
+                }
+            };
+            let ports = {
+                let ports_arr = spec.get("ports").and_then(|v| v.as_array());
+                if let Some(arr) = ports_arr {
+                    arr.iter().map(|p| {
+                        let port = p.get("port").map(val_num).unwrap_or_default();
+                        let proto = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
+                        format!("{}/{}", port, proto)
+                    }).collect::<Vec<_>>().join(",")
+                } else {
+                    String::new()
+                }
+            };
+            vec![svc_type, cluster_ip, external_ip, ports]
+        }
+        "ingress" => {
+            let class = {
+                let from_spec = spec.get("ingressClassName").and_then(|v| v.as_str());
+                if let Some(c) = from_spec { c.to_string() }
+                else {
+                    metadata.get("annotations")
+                        .and_then(|a| a.get("kubernetes.io/ingress.class"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("").to_string()
+                }
+            };
+            let hosts = {
+                let rules = spec.get("rules").and_then(|v| v.as_array());
+                if let Some(arr) = rules {
+                    arr.iter().filter_map(|r| r.get("host").and_then(|h| h.as_str())).collect::<Vec<_>>().join(",")
+                } else {
+                    String::new()
+                }
+            };
+            let address = {
+                let ing = status.get("loadBalancer").and_then(|lb| lb.get("ingress")).and_then(|v| v.as_array());
+                if let Some(arr) = ing {
+                    if arr.is_empty() {
+                        "<none>".into()
+                    } else {
+                        arr.iter().map(|v| {
+                            v.get("ip").and_then(|x| x.as_str())
+                                .or_else(|| v.get("hostname").and_then(|x| x.as_str()))
+                                .unwrap_or("").to_string()
+                        }).collect::<Vec<_>>().join(",")
+                    }
+                } else {
+                    "<none>".into()
+                }
+            };
+            let ports = if spec.get("tls").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false) {
+                "80,443".to_string()
+            } else {
+                "80".to_string()
+            };
+            vec![class, hosts, address, ports]
+        }
+        "pvc" => {
+            let phase = val_str(status.get("phase").unwrap_or(&Value::Null));
+            let volume = val_str(spec.get("volumeName").unwrap_or(&Value::Null));
+            let capacity = {
+                let cap = status.get("capacity").and_then(|c| c.get("storage")).and_then(|v| v.as_str());
+                if let Some(c) = cap { c.to_string() }
+                else {
+                    spec.get("resources").and_then(|r| r.get("requests")).and_then(|q| q.get("storage")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                }
+            };
+            let storage_class = {
+                let sc = spec.get("storageClassName").and_then(|v| v.as_str());
+                if let Some(s) = sc { s.to_string() }
+                else {
+                    metadata.get("annotations")
+                        .and_then(|a| a.get("volume.beta.kubernetes.io/storage-class"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("").to_string()
+                }
+            };
+            let access_modes = {
+                let am = spec.get("accessModes").and_then(|v| v.as_array());
+                if let Some(arr) = am {
+                    arr.iter().map(|v| val_str(v)).collect::<Vec<_>>().join(",")
+                } else {
+                    String::new()
+                }
+            };
+            vec![phase, volume, capacity, storage_class, access_modes]
+        }
+        "sts" => {
+            let ready = format!("{}/{}",
+                val_num(status.get("readyReplicas").unwrap_or(&Value::Null)),
+                val_num(spec.get("replicas").filter(|v| !v.is_null()).unwrap_or(&Value::Number(1.into()))));
+            let replicas = val_num(spec.get("replicas").filter(|v| !v.is_null()).unwrap_or(&Value::Number(1.into())));
+            let updated = val_num(status.get("updatedReplicas").unwrap_or(&Value::Null));
+            vec![ready, replicas, updated]
+        }
+        "daemonset" => {
+            let desired = val_num(status.get("desiredNumberScheduled").unwrap_or(&Value::Null));
+            let ready = val_num(status.get("numberReady").unwrap_or(&Value::Null));
+            let up_to_date = val_num(status.get("updatedNumberScheduled").unwrap_or(&Value::Null));
+            vec![desired, ready, up_to_date]
+        }
+        "job" => {
+            let succeeded = status.get("succeeded").and_then(|v| v.as_i64()).unwrap_or(0);
+            let completions = spec.get("completions").and_then(|v| v.as_i64()).unwrap_or(1);
+            let completions_str = format!("{}/{}", succeeded, completions);
+            let duration = {
+                let start = status.get("startTime").and_then(|v| v.as_str());
+                let end = status.get("completionTime").and_then(|v| v.as_str());
+                if let (Some(s), Some(e)) = (start, end) {
+                    age_between(s, e)
+                } else {
+                    String::new()
+                }
+            };
+            vec![completions_str, duration, succeeded.to_string()]
+        }
+        "cronjob" => {
+            let schedule = val_str(spec.get("schedule").unwrap_or(&Value::Null));
+            let suspend = spec.get("suspend").and_then(|v| v.as_bool()).unwrap_or(false).to_string();
+            let last_schedule = {
+                let ls = status.get("lastScheduleTime").and_then(|v| v.as_str());
+                match ls {
+                    Some(s) => s.split('T').last().unwrap_or(s).to_string(),
+                    None => "<none>".to_string(),
+                }
+            };
+            vec![schedule, suspend, last_schedule]
+        }
+        _ => vec![],
+    }
+}
+
+/// Compute duration between two RFC3339 timestamps (used for job duration).
+fn age_between(start: &str, end: &str) -> String {
+    let Ok(s) = DateTime::parse_from_rfc3339(start) else { return String::new(); };
+    let Ok(e) = DateTime::parse_from_rfc3339(end) else { return String::new(); };
+    let d = e.with_timezone(&Utc).signed_duration_since(s.with_timezone(&Utc));
+    let secs = d.num_seconds();
+    if secs < 0 { return "0s".into(); }
+    if secs < 60 { return format!("{}s", secs); }
+    if secs < 3600 { return format!("{}m", secs / 60); }
+    if secs < 86400 { return format!("{}h", secs / 3600); }
+    format!("{}d", secs / 86400)
+}
+
+pub fn parse_resources(json: &[u8], kind: &str) -> std::io::Result<ResourceListView> {
+    let parsed: Value = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let columns: Vec<String> = kind_columns(kind).iter().map(|s| s.to_string()).collect();
+    let now = Utc::now();
+    let items = parsed.get("items").and_then(|v| v.as_array());
+    let mut rows = Vec::new();
+    // Only build rows for known kinds (unknown kind → empty columns + empty rows, no panic)
+    if !columns.is_empty() {
+        if let Some(items) = items {
+            for item in items {
+                let name = item.get("metadata").and_then(|m| m.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let namespace = item.get("metadata").and_then(|m| m.get("namespace")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let creation = item.get("metadata").and_then(|m| m.get("creationTimestamp")).and_then(|v| v.as_str()).unwrap_or("");
+                let age = age_string(creation, now);
+                let values = extract_values(kind, item);
+                rows.push(ResourceRow { name, namespace, age, values });
+            }
+        }
+    }
+    Ok(ResourceListView { columns, rows })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,5 +1092,53 @@ mod tests {
         assert_eq!(b.internal_ip, "10.0.0.6");
         assert_eq!(b.cpu_allocatable, "2");
         assert_eq!(b.mem_allocatable, "8Gi");
+    }
+
+    #[test]
+    fn parses_svc_list_columns_and_values() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"my-svc","namespace":"default","creationTimestamp":"2024-01-01T00:00:00Z"},
+                 "spec":{"type":"LoadBalancer","clusterIP":"10.96.0.10","externalIPs":["1.2.3.4"],"ports":[{"port":80,"protocol":"TCP"}]},
+                 "status":{"loadBalancer":{"ingress":[{"ip":"1.2.3.4"}]}}}
+            ]
+        }"#;
+        let view = parse_resources(json, "svc").unwrap();
+        assert_eq!(view.columns, vec!["TYPE","CLUSTER-IP","EXTERNAL-IP","PORT(S)"]);
+        assert_eq!(view.rows.len(), 1);
+        let row = &view.rows[0];
+        assert_eq!(row.name, "my-svc");
+        assert_eq!(row.namespace, "default");
+        assert!(!row.age.is_empty());
+        assert_eq!(row.values, vec!["LoadBalancer","10.96.0.10","1.2.3.4","80/TCP"]);
+    }
+
+    #[test]
+    fn parses_pvc_status_bound() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"data-pvc","namespace":"default","creationTimestamp":"2024-01-01T00:00:00Z"},
+                 "spec":{"volumeName":"pvc-abc123","storageClassName":"fast-ssd","accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"10Gi"}}},
+                 "status":{"phase":"Bound","capacity":{"storage":"10Gi"}}}
+            ]
+        }"#;
+        let view = parse_resources(json, "pvc").unwrap();
+        assert_eq!(view.columns, vec!["STATUS","VOLUME","CAPACITY","STORAGECLASS","ACCESS MODES"]);
+        assert_eq!(view.rows.len(), 1);
+        let row = &view.rows[0];
+        assert_eq!(row.name, "data-pvc");
+        assert_eq!(row.values[0], "Bound");
+        assert_eq!(row.values[1], "pvc-abc123");
+        assert_eq!(row.values[2], "10Gi");
+        assert_eq!(row.values[3], "fast-ssd");
+        assert_eq!(row.values[4], "ReadWriteOnce");
+    }
+
+    #[test]
+    fn parses_unknown_kind_returns_empty_columns_and_rows() {
+        let json = br#"{"items":[{"metadata":{"name":"foo","namespace":"default"}}]}"#;
+        let view = parse_resources(json, "unknownkind").unwrap();
+        assert!(view.columns.is_empty());
+        assert!(view.rows.is_empty());
     }
 }

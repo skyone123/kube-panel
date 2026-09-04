@@ -2,15 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
 import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk } from '../api/tauri';
+import { HighlightText } from './HighlightText';
 
 interface PodActionModalProps {
   pod: PodView;
   mode: PodActionMode;
   onClose: () => void;
 }
-
-const HIGHLIGHT_RE = /(CrashLoopBackOff|OOMKilled|ImagePullBackOff|ErrImagePull|Error|Warning)/;
-const HIGHLIGHT_KEYWORDS = new Set(['CrashLoopBackOff', 'OOMKilled', 'ImagePullBackOff', 'ErrImagePull', 'Error', 'Warning']);
 
 function modeTitle(mode: PodActionMode): string {
   switch (mode) {
@@ -20,19 +18,6 @@ function modeTitle(mode: PodActionMode): string {
     case 'events': return 'Events';
     case 'yaml': return 'YAML';
   }
-}
-
-function HighlightText({ text }: { text: string }) {
-  const parts = text.split(HIGHLIGHT_RE);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part && HIGHLIGHT_KEYWORDS.has(part)
-          ? <mark key={i} className="ctx-highlight">{part}</mark>
-          : <span key={i}>{part}</span>
-      )}
-    </>
-  );
 }
 
 function ImagesPanel({ pod }: { pod: PodView }) {

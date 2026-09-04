@@ -63,3 +63,7 @@ export type RolloutRevisionView = {
   created: string;
   change_cause: string;
 };
+
+export type ResourceRow = { name: string; namespace: string; age: string; values: string[] };
+export type ResourceListView = { columns: string[]; rows: ResourceRow[] };
+export type ResourceKind = 'svc' | 'ingress' | 'pvc' | 'sts' | 'daemonset' | 'job' | 'cronjob';

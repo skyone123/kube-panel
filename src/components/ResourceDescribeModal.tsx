@@ -1,19 +1,21 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { NodeView } from '../types';
-import { describeNode } from '../api/tauri';
+import type { ResourceKind } from '../types';
+import { describeResource } from '../api/tauri';
 import { HighlightText } from './HighlightText';
 
-interface NodeDescribeModalProps {
-  node: NodeView;
+interface ResourceDescribeModalProps {
+  kind: ResourceKind;
+  name: string;
+  namespace: string;
   ctxName: string;
   onClose: () => void;
 }
 
-export function NodeDescribeModal({ node, ctxName, onClose }: NodeDescribeModalProps) {
+export function ResourceDescribeModal({ kind, name, namespace, ctxName, onClose }: ResourceDescribeModalProps) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['describe-node', ctxName, node.name],
-    queryFn: () => describeNode(ctxName, node.name),
+    queryKey: ['describe-resource', ctxName, namespace, kind, name],
+    queryFn: () => describeResource(ctxName, namespace, kind, name),
     enabled: !!ctxName,
   });
 
@@ -36,7 +38,7 @@ export function NodeDescribeModal({ node, ctxName, onClose }: NodeDescribeModalP
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${node.name}.txt`;
+    a.download = `${name}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -48,7 +50,7 @@ export function NodeDescribeModal({ node, ctxName, onClose }: NodeDescribeModalP
       <div className="pod-modal" onMouseDown={e => e.stopPropagation()}>
         <div className="pod-modal-head">
           <span className="pod-modal-title">Describe</span>
-          <span className="pod-modal-subtitle">{node.name}</span>
+          <span className="pod-modal-subtitle">{namespace ? `${namespace}/` : ''}{name}</span>
           <button className="pod-modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="pod-modal-body">

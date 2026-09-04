@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView, ResourceListView, ResourceKind } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -90,3 +90,9 @@ export function onPfStatus(cb: (v: PfSessionView) => void): Promise<UnlistenFn> 
 // Node operations (cluster-scoped)
 export const getNodes = (context: string) => invoke<NodeView[]>('get_nodes', { context });
 export const describeNode = (context: string, name: string) => invoke<string>('describe_node', { context, name });
+
+// Generic resource browser (svc/ingress/pvc/sts/daemonset/job/cronjob)
+export const getResources = (context: string, namespace: string, kind: ResourceKind) =>
+  invoke<ResourceListView>('get_resources', { context, namespace, kind });
+export const describeResource = (context: string, namespace: string, kind: ResourceKind, name: string) =>
+  invoke<string>('describe_resource', { context, namespace, kind, name });
