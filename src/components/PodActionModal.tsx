@@ -1,0 +1,274 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type { PodView, PodActionMode, EventView } from '../types';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, listContexts } from '../api/tauri';
+
+interface PodActionModalProps {
+  pod: PodView;
+  mode: PodActionMode;
+  onClose: () => void;
+}
+
+const HIGHLIGHT_RE = /(CrashLoopBackOff|OOMKilled|ImagePullBackOff|ErrImagePull|Error|Warning)/;
+const HIGHLIGHT_KEYWORDS = new Set(['CrashLoopBackOff', 'OOMKilled', 'ImagePullBackOff', 'ErrImagePull', 'Error', 'Warning']);
+
+function modeTitle(mode: PodActionMode): string {
+  switch (mode) {
+    case 'images': return 'Images';
+    case 'configmaps': return 'ConfigMaps';
+    case 'describe': return 'Describe';
+    case 'events': return 'Events';
+  }
+}
+
+function HighlightText({ text }: { text: string }) {
+  const parts = text.split(HIGHLIGHT_RE);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part && HIGHLIGHT_KEYWORDS.has(part)
+          ? <mark key={i} className="ctx-highlight">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
+function ImagesPanel({ pod }: { pod: PodView }) {
+  const images = pod.containerImages ?? [];
+  if (images.length === 0) {
+    return <div className="pod-modal-empty">No container images.</div>;
+  }
+  return (
+    <table className="image-table">
+      <thead>
+        <tr>
+          <th>Container</th>
+          <th>Image</th>
+          <th>Image ID</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {images.map((img, i) => (
+          <tr key={i}>
+            <td className="col-container">{img.name}</td>
+            <td className="col-image">{img.image}</td>
+            <td className="col-digest" title={img.image_id}>{img.image_id}</td>
+            <td>
+              <button
+                className="ctx-item"
+                onClick={() => navigator.clipboard.writeText(img.image_id)}
+              >
+                Copy
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
+  const [selectedCm, setSelectedCm] = useState<string | null>(null);
+
+  const podCmsQuery = useQuery({
+    queryKey: ['pod-configmaps', ctxName, pod.namespace, pod.name],
+    queryFn: () => getPodConfigmaps(ctxName, pod.namespace, pod.name),
+    enabled: !!ctxName,
+  });
+
+  const allCmsQuery = useQuery({
+    queryKey: ['configmaps', ctxName, pod.namespace],
+    queryFn: () => getConfigmaps(ctxName, pod.namespace),
+    enabled: !!ctxName,
+  });
+
+  const referencedCms = podCmsQuery.data ?? [];
+  const allCms = allCmsQuery.data ?? [];
+
+  // Resolve which ConfigMap objects the pod references (by name intersection)
+  const referencedSet = useMemo(() => new Set(referencedCms), [referencedCms]);
+  const referencedObjects = useMemo(
+    () => allCms.filter(cm => referencedSet.has(cm.name)),
+    [allCms, referencedSet],
+  );
+
+  const currentCm = referencedObjects.find(cm => cm.name === selectedCm) ?? null;
+
+  if (podCmsQuery.isLoading || allCmsQuery.isLoading) {
+    return <div className="pod-modal-loading">Loading ConfigMaps…</div>;
+  }
+  if (podCmsQuery.error || allCmsQuery.error) {
+    return (
+      <div className="pod-modal-error">
+        Error: {(podCmsQuery.error as Error)?.message ?? (allCmsQuery.error as Error)?.message ?? 'unknown'}
+      </div>
+    );
+  }
+
+  if (referencedCms.length === 0) {
+    return <div className="pod-modal-empty">No referenced ConfigMaps for this pod.</div>;
+  }
+
+  return (
+    <div className="cm-split">
+      <div className="cm-list">
+        <div className="cm-list-head">Referenced ({referencedCms.length})</div>
+        {referencedCms.map(name => (
+          <button
+            key={name}
+            className={`cm-item${name === selectedCm ? ' active' : ''}`}
+            onClick={() => setSelectedCm(name)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+      <div className="cm-detail">
+        {currentCm ? (
+          <>
+            <div className="cm-detail-head">{currentCm.name}</div>
+            {currentCm.keys.length === 0 ? (
+              <div className="pod-modal-empty">No keys.</div>
+            ) : (
+              currentCm.keys.map(k => (
+                <div key={k} className="cm-key-val">
+                  <div className="cm-key-row">
+                    <span className="cm-key">{k}</span>
+                    <button
+                      className="ctx-item"
+                      onClick={() => navigator.clipboard.writeText(k)}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <pre className="cm-val">{k}</pre>
+                </div>
+              ))
+            )}
+          </>
+        ) : (
+          <div className="pod-modal-empty">Select a ConfigMap to view its keys.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DescribePanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['describe-pod', ctxName, pod.namespace, pod.name],
+    queryFn: () => describePod(ctxName, pod.namespace, pod.name),
+    enabled: !!ctxName,
+  });
+
+  if (isLoading) return <div className="pod-modal-loading">Loading describe…</div>;
+  if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
+  if (!data) return <div className="pod-modal-empty">No describe output.</div>;
+
+  const lines = data.split('\n');
+  return (
+    <pre className="describe-output mono">
+      {lines.map((line, i) => (
+        <div key={i} className="describe-line">
+          <HighlightText text={line} />
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
+  const [onlyThisPod, setOnlyThisPod] = useState(true);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['events', ctxName, pod.namespace],
+    queryFn: () => getEvents(ctxName, pod.namespace),
+    enabled: !!ctxName,
+  });
+
+  const events: EventView[] = data ?? [];
+  const filtered = useMemo(() => {
+    let list = events;
+    if (onlyThisPod) {
+      list = list.filter(e => e.involved_name === pod.name);
+    }
+    // Sort newest-first (backend may already sort, but ensure client-side)
+    return [...list].sort((a, b) => {
+      const ta = a.last_timestamp ? new Date(a.last_timestamp).getTime() : 0;
+      const tb = b.last_timestamp ? new Date(b.last_timestamp).getTime() : 0;
+      return tb - ta;
+    });
+  }, [events, onlyThisPod, pod.name]);
+
+  if (isLoading) return <div className="pod-modal-loading">Loading events…</div>;
+  if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
+
+  return (
+    <div className="events-wrap">
+      <label className="events-filter lc-check">
+        <input
+          type="checkbox"
+          checked={onlyThisPod}
+          onChange={e => setOnlyThisPod(e.target.checked)}
+        />
+        <span>Only this pod</span>
+      </label>
+      {filtered.length === 0 ? (
+        <div className="pod-modal-empty">No events.</div>
+      ) : (
+        <table className="event-table">
+          <thead>
+            <tr>
+              <th>Time</th><th>Type</th><th>Reason</th><th>Object</th><th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((ev, i) => (
+              <tr key={i} className={`event-type-${ev.type_.toLowerCase()}`}>
+                <td className="col-time">{ev.last_timestamp}</td>
+                <td className="col-type">{ev.type_}</td>
+                <td className="col-reason">{ev.reason}</td>
+                <td className="col-object">{ev.involved_name}</td>
+                <td className="col-message">{ev.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export function PodActionModal({ pod, mode, onClose }: PodActionModalProps) {
+  const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
+  const ctxName = contexts.find(c => c.current)?.name ?? '';
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="pod-modal-backdrop" onMouseDown={onClose}>
+      <div className="pod-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="pod-modal-head">
+          <span className="pod-modal-title">{modeTitle(mode)}</span>
+          <span className="pod-modal-subtitle">{pod.namespace}/{pod.name}</span>
+          <button className="pod-modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="pod-modal-body">
+          {mode === 'images' && <ImagesPanel pod={pod} />}
+          {mode === 'configmaps' && <ConfigmapsPanel pod={pod} ctxName={ctxName} />}
+          {mode === 'describe' && <DescribePanel pod={pod} ctxName={ctxName} />}
+          {mode === 'events' && <EventsPanel pod={pod} ctxName={ctxName} />}
+        </div>
+      </div>
+    </div>
+  );
+}

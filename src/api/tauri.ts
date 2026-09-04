@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, ConfigMapView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -11,6 +11,15 @@ export const getPodLogs = (context: string, namespace: string, pod: string, cont
   invoke<string>('get_pod_logs', { context, namespace, pod, container, previous, tail });
 export const listHistory = (limit: number) => invoke<HistoryEntry[]>('list_history', { limit });
 export const searchHistory = (query: string, limit: number) => invoke<HistoryEntry[]>('search_history', { query, limit });
+
+export const describePod = (context: string, namespace: string, pod: string) =>
+  invoke<string>('describe_pod', { context, namespace, pod });
+export const getEvents = (context: string, namespace: string) =>
+  invoke<EventView[]>('get_events', { context, namespace });
+export const getConfigmaps = (context: string, namespace: string) =>
+  invoke<ConfigMapView[]>('get_configmaps', { context, namespace });
+export const getPodConfigmaps = (context: string, namespace: string, pod: string) =>
+  invoke<string[]>('get_pod_configmaps', { context, namespace, pod });
 
 export type LogChunk = { id: string; text: string };
 

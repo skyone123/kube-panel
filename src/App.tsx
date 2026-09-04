@@ -5,9 +5,10 @@ import { PodTable } from './components/PodTable';
 import { LogViewer } from './components/LogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
 import { NamespaceSwitcher } from './components/NamespaceSwitcher';
+import { PodActionModal } from './components/PodActionModal';
 import { useAppStore } from './stores/appStore';
 import { getPods, listContexts, listHistory } from './api/tauri';
-import type { PodView } from './types';
+import type { PodView, PodActionMode } from './types';
 import './App.css';
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
   const [q, setQ] = useState('');
   const [selectedPod, setSelectedPod] = useState<PodView | null>(null);
   const [histQuery, setHistQuery] = useState('');
+  const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -69,7 +71,7 @@ export default function App() {
               <span className="spacer" />
             </div>
             <div className="pod-table-wrap">
-              <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} />
+              <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} />
             </div>
           </section>
 
@@ -114,6 +116,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      {podAction && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
     </div>
   );
 }
