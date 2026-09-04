@@ -1019,6 +1019,8 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   min-width: 0;
 }
 .cm-detail-head {
+  display: flex;
+  align-items: center;
   padding: 8px 14px;
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1050,6 +1052,19 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.cm-val-scroll {
+  max-height: 400px;
+  overflow: auto;
+}
+.cm-detail-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.cm-key-actions {
+  display: flex;
+  gap: 4px;
 }
 
 /* Describe output */

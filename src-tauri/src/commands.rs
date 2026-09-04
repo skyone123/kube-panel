@@ -208,3 +208,15 @@ pub async fn get_pod_configmaps(
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_pod_configmap_refs(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn get_configmap(
+    context: String, namespace: String, name: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<crate::models::ConfigMapDataView, String> {
+    let ns_arg = if namespace.is_empty() { None } else { Some(&namespace[..]) };
+    let res = rt.run(&context, ns_arg, &["get", "cm", &name, "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_configmap_data(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}

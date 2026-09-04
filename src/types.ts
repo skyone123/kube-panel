@@ -6,6 +6,9 @@ export type PodView = { name: string; namespace: string; ready: string; status: 
 
 export type ConfigMapView = { name: string; keys: string[] };
 
+export type ConfigMapEntry = { key: string; value: string };
+export type ConfigMapDataView = { name: string; entries: ConfigMapEntry[] };
+
 export type EventView = { last_timestamp: string; type_: string; reason: string; message: string; involved_name: string };
 
 export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events';

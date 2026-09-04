@@ -132,6 +132,12 @@ pub struct ConfigMapMeta { pub name: String }
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ConfigMapView { pub name: String, pub keys: Vec<String> }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConfigMapEntry { pub key: String, pub value: String }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConfigMapDataView { pub name: String, pub entries: Vec<ConfigMapEntry> }
+
 pub fn parse_configmap_list(json: &[u8]) -> std::io::Result<Vec<ConfigMapView>> {
     let list: ConfigMapList = serde_json::from_slice(json)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -139,6 +145,17 @@ pub fn parse_configmap_list(json: &[u8]) -> std::io::Result<Vec<ConfigMapView>> 
         name: cm.metadata.name,
         keys: cm.data.keys().cloned().collect(),
     }).collect())
+}
+
+/// Parse single-CM JSON (`kubectl get cm <name> -o json`): `{ metadata:{name}, data:{k:v} }`.
+/// `data` absent → empty entries. BTreeMap iterates sorted by key → stable order.
+pub fn parse_configmap_data(json: &[u8]) -> std::io::Result<ConfigMapDataView> {
+    let cm: ConfigMapItem = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let entries = cm.data.into_iter()
+        .map(|(k, v)| ConfigMapEntry { key: k, value: v })
+        .collect();
+    Ok(ConfigMapDataView { name: cm.metadata.name, entries })
 }
 
 // ---------------------------------------------------------------------------
@@ -342,5 +359,31 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert_eq!(names[0], "arc-system");
         assert_eq!(names[1], "default");
+    }
+
+    #[test]
+    fn parses_configmap_data_returns_sorted_entries() {
+        let json = br#"{
+            "metadata": {"name": "my-cm"},
+            "data": {"Z": "zv", "A": "av"}
+        }"#;
+        let view = parse_configmap_data(json).unwrap();
+        assert_eq!(view.name, "my-cm");
+        assert_eq!(view.entries.len(), 2);
+        // BTreeMap sorts by key → A before Z
+        assert_eq!(view.entries[0].key, "A");
+        assert_eq!(view.entries[0].value, "av");
+        assert_eq!(view.entries[1].key, "Z");
+        assert_eq!(view.entries[1].value, "zv");
+    }
+
+    #[test]
+    fn parses_configmap_data_no_data_field_empty_entries() {
+        let json = br#"{
+            "metadata": {"name": "empty-cm"}
+        }"#;
+        let view = parse_configmap_data(json).unwrap();
+        assert_eq!(view.name, "empty-cm");
+        assert!(view.entries.is_empty());
     }
 }

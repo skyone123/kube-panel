@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, listContexts } from '../api/tauri';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, listContexts } from '../api/tauri';
 
 interface PodActionModalProps {
   pod: PodView;
@@ -85,6 +85,12 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     enabled: !!ctxName,
   });
 
+  const cmDataQuery = useQuery({
+    queryKey: ['configmap-data', ctxName, pod.namespace, selectedCm],
+    queryFn: () => getConfigmap(ctxName, pod.namespace, selectedCm!),
+    enabled: !!selectedCm,
+  });
+
   const referencedCms = podCmsQuery.data ?? [];
   const allCms = allCmsQuery.data ?? [];
 
@@ -112,6 +118,26 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     return <div className="pod-modal-empty">No referenced ConfigMaps for this pod.</div>;
   }
 
+  const entries = cmDataQuery.data?.entries ?? [];
+
+  const handleCopyAll = () => {
+    const text = entries.map(e => `${e.key}=${e.value}`).join('\n');
+    navigator.clipboard.writeText(text);
+  };
+
+  const handleExport = () => {
+    const text = entries.map(e => `${e.key}=${e.value}`).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedCm ?? 'configmap'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="cm-split">
       <div className="cm-list">
@@ -129,28 +155,60 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
       <div className="cm-detail">
         {currentCm ? (
           <>
-            <div className="cm-detail-head">{currentCm.name}</div>
-            {currentCm.keys.length === 0 ? (
+            <div className="cm-detail-head">
+              <span>{currentCm.name}</span>
+              <span className="cm-detail-actions">
+                <button
+                  className="ctx-item"
+                  onClick={handleCopyAll}
+                  disabled={entries.length === 0}
+                >
+                  Copy all
+                </button>
+                <button
+                  className="ctx-item"
+                  onClick={handleExport}
+                  disabled={entries.length === 0}
+                >
+                  Export
+                </button>
+              </span>
+            </div>
+            {cmDataQuery.isLoading ? (
+              <div className="pod-modal-loading">Loading ConfigMap data…</div>
+            ) : cmDataQuery.error ? (
+              <div className="pod-modal-error">
+                Error: {(cmDataQuery.error as Error).message}
+              </div>
+            ) : entries.length === 0 ? (
               <div className="pod-modal-empty">No keys.</div>
             ) : (
-              currentCm.keys.map(k => (
-                <div key={k} className="cm-key-val">
+              entries.map(e => (
+                <div key={e.key} className="cm-key-val">
                   <div className="cm-key-row">
-                    <span className="cm-key">{k}</span>
-                    <button
-                      className="ctx-item"
-                      onClick={() => navigator.clipboard.writeText(k)}
-                    >
-                      Copy
-                    </button>
+                    <span className="cm-key">{e.key}</span>
+                    <span className="cm-key-actions">
+                      <button
+                        className="ctx-item"
+                        onClick={() => navigator.clipboard.writeText(e.key)}
+                      >
+                        Copy key
+                      </button>
+                      <button
+                        className="ctx-item"
+                        onClick={() => navigator.clipboard.writeText(e.value)}
+                      >
+                        Copy value
+                      </button>
+                    </span>
                   </div>
-                  <pre className="cm-val">{k}</pre>
+                  <pre className="cm-val cm-val-scroll">{e.value}</pre>
                 </div>
               ))
             )}
           </>
         ) : (
-          <div className="pod-modal-empty">Select a ConfigMap to view its keys.</div>
+          <div className="pod-modal-empty">Select a ConfigMap to view its data.</div>
         )}
       </div>
     </div>
