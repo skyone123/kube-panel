@@ -153,6 +153,79 @@ pub fn stop_log_stream(id: String, registry: State<'_, StreamRegistry>) -> Resul
     Ok(())
 }
 
+/// A single target in a multi-pod merged log tail.
+#[derive(serde::Deserialize)]
+pub struct MultiPodTarget {
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+}
+
+/// Start a merged `kubectl logs -f` stream across multiple pods. Returns the
+/// merge stream id. Each pod's lines are prefixed with `[<podname>] ` before
+/// being emitted as `log_chunk` events `{ id, text }`. The stream stays alive
+/// until all children exit OR `stop_log_stream(id)` is called.
+///
+/// History: ONE row is recorded with `is_stream=true`, `exit_code=None`, and a
+/// representative argv summarizing the merged pods. Log CHUNK text is NEVER
+/// written to history.
+#[tauri::command]
+pub async fn stream_multi_pod_logs(
+    context: String,
+    targets: Vec<MultiPodTarget>,
+    previous: bool,
+    tail: Option<i64>,
+    since: Option<String>,
+    rt: State<'_, KubeRuntime>,
+    registry: State<'_, StreamRegistry>,
+    history: State<'_, History>,
+    app: AppHandle,
+) -> Result<String, String> {
+    if targets.len() < 2 {
+        return Err("select at least 2 pods to merge".into());
+    }
+    let mut children: Vec<(String, tokio::process::Child)> = Vec::with_capacity(targets.len());
+    for t in &targets {
+        let mut args: Vec<String> = vec!["logs".into(), "-f".into(), t.pod.clone()];
+        if let Some(c) = &t.container {
+            args.push("-c".into());
+            args.push(c.clone());
+        }
+        if previous {
+            args.push("--previous".into());
+        }
+        if let Some(n) = tail {
+            args.push(format!("--tail={}", n));
+        }
+        if let Some(s) = &since {
+            args.push(format!("--since={}", s));
+        }
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let ns_opt = if t.namespace.is_empty() { None } else { Some(t.namespace.as_str()) };
+        let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
+        cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let child = cmd.spawn().map_err(|e| e.to_string())?;
+        children.push((format!("[{}] ", t.pod), child));
+    }
+
+    // Record ONE history row (metadata-only, is_stream=true, exit_code=None).
+    let pods_summary = targets.iter().map(|t| t.pod.as_str()).collect::<Vec<_>>().join(",");
+    let hist_argv: Vec<&str> = vec!["logs", "-f", "--multi", &pods_summary];
+    let entry = build_history_entry(&context, None, &hist_argv, None, 0, true);
+    if let Err(e) = history.insert(&entry) {
+        eprintln!("[kube-panel] history insert failed for multi stream: {e}");
+    }
+
+    let merge_id = crate::stream::new_id();
+    let mid = merge_id.clone();
+    let id_ret = registry.start_multi(merge_id, children, move |text| {
+        let _ = app.emit("log_chunk", LogChunk { id: mid.clone(), text });
+    });
+    Ok(id_ret)
+}
+
 #[tauri::command]
 pub async fn describe_pod(
     context: String, namespace: String, pod: String,

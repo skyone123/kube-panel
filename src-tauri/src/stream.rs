@@ -3,9 +3,16 @@ use std::sync::{Arc, Mutex};
 use tokio::process::Child;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+/// A stream entry holds either a single child process or multiple children
+/// (multi-pod merged tail). Both variants are killed on `stop`.
+pub enum StreamHandle {
+    Single(Child),
+    Multi(Vec<Child>),
+}
+
 #[derive(Clone)]
 pub struct StreamRegistry {
-    streams: Arc<Mutex<HashMap<String, Child>>>,
+    streams: Arc<Mutex<HashMap<String, StreamHandle>>>,
 }
 
 impl StreamRegistry {
@@ -27,7 +34,7 @@ impl StreamRegistry {
         let emit: Arc<F> = Arc::new(emit);
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        self.streams.lock().unwrap().insert(id.clone(), child);
+        self.streams.lock().unwrap().insert(id.clone(), StreamHandle::Single(child));
 
         // stdout reader: primary — removes the entry from the registry on EOF
         if let Some(stdout) = stdout {
@@ -67,9 +74,66 @@ impl StreamRegistry {
         id
     }
 
+    /// Spawn reader tasks for multiple child processes (multi-pod merged tail).
+    /// Each child's stdout lines are prefixed with `prefix` before being emitted;
+    /// stderr lines get `[stderr] ` inserted after the prefix. Multi-stream readers
+    /// do NOT remove the entry on EOF (other children may still stream) — the
+    /// entry is removed only by `stop()`.
+    pub fn start_multi<F>(&self, id: String, children: Vec<(String, Child)>, emit: F) -> String
+    where F: Fn(String) + Send + Sync + 'static {
+        let emit: Arc<F> = Arc::new(emit);
+        let mut drained: Vec<Child> = Vec::with_capacity(children.len());
+        for (prefix, mut child) in children {
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+            drained.push(child);
+            if let Some(stdout) = stdout {
+                let emit = emit.clone();
+                let prefix: Arc<str> = Arc::from(prefix.as_str());
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stdout);
+                    loop {
+                        let mut buf = String::new();
+                        match reader.read_line(&mut buf).await {
+                            Ok(0) => break,
+                            Ok(_) => emit(format!("{}{}", prefix, buf)),
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
+            if let Some(stderr) = stderr {
+                let emit = emit.clone();
+                let prefix: Arc<str> = Arc::from(prefix.as_str());
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(stderr);
+                    loop {
+                        let mut buf = String::new();
+                        match reader.read_line(&mut buf).await {
+                            Ok(0) => break,
+                            Ok(_) => emit(format!("{}[stderr] {}", prefix, buf)),
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
+        }
+        self.streams.lock().unwrap().insert(id.clone(), StreamHandle::Multi(drained));
+        id
+    }
+
     pub fn stop(&self, id: &str) {
-        if let Some(mut child) = self.streams.lock().unwrap().remove(id) {
-            let _ = child.start_kill(); // signal kill; reaping happens via the reader task EOF
+        if let Some(handle) = self.streams.lock().unwrap().remove(id) {
+            match handle {
+                StreamHandle::Single(mut child) => {
+                    let _ = child.start_kill();
+                }
+                StreamHandle::Multi(children) => {
+                    for mut child in children {
+                        let _ = child.start_kill();
+                    }
+                }
+            }
         }
     }
 
@@ -153,5 +217,53 @@ mod tests {
         // stop() removes synchronously
         assert_eq!(registry.len(), 0);
         std::fs::remove_file(script).ok();
+    }
+
+    #[tokio::test]
+    async fn start_multi_emits_prefixed_lines_and_stop_kills_all() {
+        // Two fake kubectl scripts: each echoes a distinct line then exits.
+        let script1 = write_fake("multi1", "echo pod1-line");
+        let script2 = write_fake("multi2", "echo pod2-line");
+        let k1 = Kubectl::with_binary(script1.to_string_lossy().into_owned());
+        let k2 = Kubectl::with_binary(script2.to_string_lossy().into_owned());
+        let mut cmd1 = k1.build("dev", None, &[]);
+        cmd1.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        let child1 = cmd1.spawn().unwrap();
+        let mut cmd2 = k2.build("dev", None, &[]);
+        cmd2.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        let child2 = cmd2.spawn().unwrap();
+
+        let registry = StreamRegistry::new();
+        let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+        let cap2 = captured.clone();
+        registry.start_multi(
+            "m-test".into(),
+            vec![
+                ("[pod1] ".into(), child1),
+                ("[pod2] ".into(), child2),
+            ],
+            move |text| { cap2.lock().unwrap().push(text); },
+        );
+
+        // Wait up to 2s for both prefixed lines to arrive.
+        for _ in 0..40 {
+            let caps = captured.lock().unwrap();
+            let has1 = caps.iter().any(|l| l.contains("[pod1] pod1-line"));
+            let has2 = caps.iter().any(|l| l.contains("[pod2] pod2-line"));
+            drop(caps);
+            if has1 && has2 { break; }
+            sleep(Duration::from_millis(50)).await;
+        }
+        let lines = captured.lock().unwrap().clone();
+        assert!(lines.iter().any(|l| l.contains("[pod1] pod1-line")), "missing pod1 line, got {:?}", lines);
+        assert!(lines.iter().any(|l| l.contains("[pod2] pod2-line")), "missing pod2 line, got {:?}", lines);
+
+        // One Multi entry registered (not removed by EOF — only stop removes it).
+        assert_eq!(registry.len(), 1, "multi entry should still be registered after both children EOF");
+        registry.stop("m-test");
+        assert_eq!(registry.len(), 0, "stop should remove the multi entry");
+
+        std::fs::remove_file(script1).ok();
+        std::fs::remove_file(script2).ok();
     }
 }

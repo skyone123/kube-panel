@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -36,6 +36,14 @@ export const streamPodLogs = (
 ) => invoke<string>('stream_pod_logs', { context, namespace, pod, container, previous, tail, since });
 
 export const stopLogStream = (id: string) => invoke<void>('stop_log_stream', { id });
+
+export const streamMultiPodLogs = (
+  context: string,
+  targets: MultiPodTarget[],
+  previous: boolean,
+  tail: number | null,
+  since: string | null,
+) => invoke<string>('stream_multi_pod_logs', { context, targets, previous, tail, since });
 
 // Subscribe to log_chunk events; returns the unlisten handle. cb receives
 // chunks for ALL streams — filter by id in the callback.

@@ -812,6 +812,60 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 .pod-table .col-ns, .pod-table .col-node { color: var(--text-secondary); }
 .pod-table .col-ready { color: var(--text-secondary); }
 
+/* Checkbox column */
+.pod-table .col-sel {
+  width: 28px;
+  text-align: center;
+  padding: 8px 4px;
+  white-space: nowrap;
+  user-select: none;
+}
+.pod-table .col-sel input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  vertical-align: middle;
+  margin: 0;
+}
+
+/* Multi-select action bar */
+.pod-multi-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(56, 139, 253, 0.08);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+/* Merged log viewer header */
+.merged-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: rgba(255, 255, 255, 0.015);
+}
+.merged-head .merged-title {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.merged-head .merged-pods {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* keep old class hooks working if anything else references them */
 .main { /* legacy */ }
 .history-section { /* legacy */ }

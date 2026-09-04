@@ -9,6 +9,7 @@ interface PodTableProps {
   onSelect?: (pod: PodView) => void;
   selected?: PodView | null;
   onPodAction?: (pod: PodView, mode: PodActionMode) => void;
+  onMergeTail?: (pods: PodView[]) => void;
 }
 
 function statusClass(status: string): 'status-error' | 'status-ok' | 'status-warn' {
@@ -25,7 +26,7 @@ function statusPill(status: string) {
 
 type CtxMenuState = { pod: PodView; x: number; y: number } | null;
 
-export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTableProps) {
+export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail }: PodTableProps) {
   const q = query.trim().toLowerCase();
   const shown = q
     ? pods.filter(p =>
@@ -37,6 +38,10 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTa
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [multiSel, setMultiSel] = useState<Set<string>>(new Set());
+
+  const allShownKeys = shown.map(p => `${p.namespace}/${p.name}`);
+  const allSelected = allShownKeys.length > 0 && allShownKeys.every(k => multiSel.has(k));
 
   // Close on Escape
   useEffect(() => {
@@ -86,6 +91,32 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTa
     }
   };
 
+  const toggleRow = (key: string) => {
+    setMultiSel(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setMultiSel(prev => {
+      if (allSelected) {
+        const next = new Set(prev);
+        for (const k of allShownKeys) next.delete(k);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const k of allShownKeys) next.add(k);
+      return next;
+    });
+  };
+
+  const clearMulti = () => setMultiSel(new Set());
+
+  const selectedPods = pods.filter(p => multiSel.has(`${p.namespace}/${p.name}`));
+
   if (shown.length === 0) {
     return (
       <div className="pod-empty">
@@ -96,9 +127,28 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTa
 
   return (
     <>
+      {multiSel.size >= 2 && (
+        <div className="pod-multi-bar">
+          <button
+            className="lc-btn"
+            onClick={() => { onMergeTail?.(selectedPods); clearMulti(); }}
+          >
+            Tail {multiSel.size} pods
+          </button>
+          <button className="lc-btn" onClick={clearMulti}>Clear</button>
+        </div>
+      )}
       <table className="pod-table">
         <thead>
           <tr>
+            <th className="col-sel">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label="Select all visible pods"
+              />
+            </th>
             <th>Name</th><th>Namespace</th><th>Ready</th><th>Status</th>
             <th>Restarts</th><th>Age</th><th>Node</th>
           </tr>
@@ -108,6 +158,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTa
             const cls = statusClass(p.status);
             const key = `${p.namespace}/${p.name}`;
             const isSel = key === selectedKey;
+            const isMultiSel = multiSel.has(key);
             const highRestarts = p.restarts >= 1;
             return (
               <tr
@@ -117,6 +168,15 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction }: PodTa
                 onContextMenu={e => handleContext(e, p)}
                 style={{ cursor: onSelect ? 'pointer' : 'default' }}
               >
+                <td className="col-sel">
+                  <input
+                    type="checkbox"
+                    checked={isMultiSel}
+                    onClick={e => e.stopPropagation()}
+                    onChange={() => toggleRow(key)}
+                    aria-label={`Select ${p.name}`}
+                  />
+                </td>
                 <td className="col-name">{p.name}</td>
                 <td className="col-ns">{p.namespace}</td>
                 <td className="col-ready">{p.ready}</td>

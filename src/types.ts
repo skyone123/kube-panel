@@ -13,4 +13,6 @@ export type EventView = { last_timestamp: string; type_: string; reason: string;
 
 export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events';
 
+export type MultiPodTarget = { namespace: string; pod: string; container: string | null };
+
 export type HistoryEntry = { id: number | null; ts_ms: number; context: string; namespace: string | null; argv: string[]; exit_code: number | null; duration_ms: number | null; is_stream: boolean; favorite: boolean };

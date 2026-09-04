@@ -90,4 +90,61 @@ describe('PodTable', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByText('Copy name')).not.toBeInTheDocument();
   });
+
+  it('checkbox toggle adds/removes from selection and Tail button fires onMergeTail', () => {
+    const onMergeTail = vi.fn();
+    render(<PodTable pods={pods} query="" onMergeTail={onMergeTail} />);
+
+    // Tail button not visible with 0 selections
+    expect(screen.queryByText(/Tail \d+ pods/)).not.toBeInTheDocument();
+
+    // Check the nginx row checkbox
+    const nginxCheckbox = screen.getAllByRole('checkbox', { name: /Select nginx/ })[0] as HTMLInputElement;
+    fireEvent.click(nginxCheckbox);
+
+    // Still only 1 selected — Tail button requires 2+
+    expect(screen.queryByText(/Tail \d+ pods/)).not.toBeInTheDocument();
+
+    // Check the crashy row checkbox
+    const crashyCheckbox = screen.getAllByRole('checkbox', { name: /Select crashy/ })[0] as HTMLInputElement;
+    fireEvent.click(crashyCheckbox);
+
+    // Now 2 selected — Tail button appears
+    const tailBtn = screen.getByText(/Tail 2 pods/) as HTMLButtonElement;
+    expect(tailBtn).toBeInTheDocument();
+
+    // Click Tail → fires onMergeTail with the right pods
+    fireEvent.click(tailBtn);
+    expect(onMergeTail).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'nginx' }),
+        expect.objectContaining({ name: 'crashy' }),
+      ]),
+    );
+    expect(onMergeTail).toHaveBeenCalledTimes(1);
+  });
+
+  it('select-all checkbox toggles all visible rows', () => {
+    const onMergeTail = vi.fn();
+    const { container } = render(<PodTable pods={pods} query="" onMergeTail={onMergeTail} />);
+
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /Select all visible pods/ }) as HTMLInputElement;
+    expect(selectAllCheckbox.checked).toBe(false);
+
+    fireEvent.click(selectAllCheckbox);
+
+    // Both row checkboxes should be checked
+    const rowCheckboxes = container.querySelectorAll('.pod-table tbody .col-sel input[type="checkbox"]');
+    expect(rowCheckboxes.length).toBe(2);
+    expect((rowCheckboxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((rowCheckboxes[1] as HTMLInputElement).checked).toBe(true);
+
+    // Tail button shows 2
+    expect(screen.getByText(/Tail 2 pods/)).toBeInTheDocument();
+
+    // Uncheck all
+    fireEvent.click(selectAllCheckbox);
+    expect((rowCheckboxes[0] as HTMLInputElement).checked).toBe(false);
+    expect((rowCheckboxes[1] as HTMLInputElement).checked).toBe(false);
+  });
 });

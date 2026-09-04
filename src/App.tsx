@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
 import { LogViewer } from './components/LogViewer';
+import { MergedLogViewer } from './components/MergedLogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
 import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { PodActionModal } from './components/PodActionModal';
 import { useAppStore } from './stores/appStore';
-import { getPods, listContexts, listHistory } from './api/tauri';
+import { getPods, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
 import type { PodView, PodActionMode } from './types';
 import './App.css';
 
@@ -17,6 +18,7 @@ export default function App() {
   const [selectedPod, setSelectedPod] = useState<PodView | null>(null);
   const [histQuery, setHistQuery] = useState('');
   const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
+  const [merge, setMerge] = useState<{ id: string; pods: PodView[] } | null>(null);
   // single source of truth: derive the current context from the ['contexts']
   // query itself (the `current` flag reflects the on-disk kubeconfig after
   // use_context). This makes the ['pods'] query key change whenever the
@@ -71,7 +73,15 @@ export default function App() {
               <span className="spacer" />
             </div>
             <div className="pod-table-wrap">
-              <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} />
+              <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onMergeTail={async (pods) => {
+                try {
+                  const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
+                  const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);
+                  setMerge({ id, pods });
+                } catch {
+                  /* noop */
+                }
+              }} />
             </div>
           </section>
 
@@ -117,6 +127,7 @@ export default function App() {
         </div>
       </div>
       {podAction && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
+      {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
     </div>
   );
 }

@@ -34,6 +34,7 @@ pub fn run() {
             commands::list_history,
             commands::search_history,
             commands::stream_pod_logs,
+            commands::stream_multi_pod_logs,
             commands::stop_log_stream,
             commands::describe_pod,
             commands::get_events,
