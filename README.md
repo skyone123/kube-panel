@@ -37,7 +37,8 @@ in one desktop app.
 | Area | What you get |
 | :--- | :--- |
 | 🧭 **Context & namespace** | Parse `~/.kube/config` + `KUBECONFIG` offline; one-click context switch; all-namespaces default view so you find any pod. |
-| 📋 **Pods** | Substring filter (name / namespace / node), status color pills, high-restart highlighting, **right-click → images / ConfigMaps / describe / events**. |
+| 📋 **Pods** | Substring filter (name / namespace / node), status color pills, high-restart highlighting, **right-click → images / ConfigMaps / describe / events / YAML**. |
+| 🖥️ **Nodes** | Node table with **Ready / pressure (Memory/PID/Disk) / roles / version / OS**, allocatable summary, live auto-refresh, right-click describe. |
 | 📜 **Logs** | Streaming `kubectl logs -f` (ring buffer, follow-tail, `--previous`/`--since`/`--tail`, container dropdown), **fullscreen**, **regex search** with prev/next + match count, **export to `.log`**. |
 | 🔀 **Multi-pod tail** | Select ≥2 pods → one merged stream with `[pod]` prefixes. |
 | 🚀 **Deployments & rollout** | Deployments tab + right-click **restart / scale / undo / history**, each behind a confirm modal showing the exact command. |
@@ -184,17 +185,20 @@ See the design doc for the full security rationale (§6.4).
 - [x] Pod table + filter + anomaly highlight
 - [x] Streaming logs + regex search + export + fullscreen
 - [x] Multi-pod merged tail
-- [x] Pod right-click: images / configmaps / describe / events
+- [x] Pod right-click: images / configmaps / describe / events / **YAML**
 - [x] Deployments view + rollout restart/scale/undo/history
 - [x] Port-forward manager
 - [x] Command history (metadata-only, searchable)
+- [x] **Live auto-refresh** of pod / deployment / node tables
+- [x] **Node view** (status, roles, pressure, allocatable, describe)
+- [x] **Live event stream** (`kubectl --raw` watch)
 
 **Planned / deferred**
 - [ ] Exec terminal (ConPTY + xterm.js)
 - [ ] YAML apply (dry-run preview → confirm → apply)
 - [ ] Cluster health badge (`get --raw /healthz` + `auth can-i`)
 - [ ] Favorites / command snippets
-- [ ] Resource browser beyond pods/deployments (svc, ingress, pvc, …)
+- [ ] Resource browser beyond pods/deployments/nodes (svc, ingress, pvc, …)
 - [ ] Anomaly-highlight polish (restart-spike detection, OOMKilled icon)
 - [ ] Restrictive Tauri CSP
 
