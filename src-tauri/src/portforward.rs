@@ -68,30 +68,38 @@ impl PfRegistry {
         let emit = emit.clone();
         let id_for_monitor = id.clone();
         tokio::spawn(async move {
-            // Drain stderr into a bounded buffer (last ~500 bytes) so on
-            // failure we have a message to show the user.
-            let stderr_buf = if let Some(mut stderr) = stderr {
-                let mut buf = Vec::with_capacity(512);
-                let mut chunk = [0u8; 256];
-                loop {
-                    match stderr.read(&mut chunk).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            buf.extend_from_slice(&chunk[..n]);
-                            // Keep only the last 500 bytes
-                            if buf.len() > 500 {
-                                let start = buf.len() - 500;
-                                buf = buf[start..].to_vec();
+            // Drain stderr CONCURRENTLY in a separate task. kubectl port-forward
+            // keeps its stderr pipe open for the process's whole lifetime (it
+            // writes log lines to stderr), so a blocking read loop here would
+            // prevent the `select!` below from ever running — which means the
+            // stop signal would never be received and Stop would not work. The
+            // drain task fills a shared buffer; we read whatever was captured
+            // after the child exits.
+            let stderr_buf: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+            if let Some(mut stderr) = stderr {
+                let buf = stderr_buf.clone();
+                tokio::spawn(async move {
+                    let mut local = Vec::with_capacity(512);
+                    let mut chunk = [0u8; 256];
+                    loop {
+                        match stderr.read(&mut chunk).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                local.extend_from_slice(&chunk[..n]);
+                                // Keep only the last 500 bytes.
+                                if local.len() > 500 {
+                                    let start = local.len() - 500;
+                                    local = local[start..].to_vec();
+                                }
                             }
                         }
                     }
-                }
-                Some(buf)
-            } else {
-                None
-            };
+                    *buf.lock().unwrap() = Some(local);
+                });
+            }
 
-            // Wait for the child to exit, or for a stop signal.
+            // Wait for the child to exit, or for a stop signal. Reached immediately
+            // because the stderr drain runs in its own task above.
             let exit_code;
             let user_stopped;
             tokio::select! {
@@ -118,9 +126,8 @@ impl PfRegistry {
                 "failed".to_string()
             };
             if exit_code != 0 {
-                if let Some(buf) = &stderr_buf {
+                if let Some(buf) = stderr_buf.lock().unwrap().as_ref() {
                     message = String::from_utf8_lossy(buf).into_owned();
-                    // Truncate to 500 chars
                     if message.len() > 500 {
                         message.truncate(500);
                     }
@@ -316,6 +323,48 @@ mod tests {
         let views = registry.list();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].status, "stopped");
+
+        std::fs::remove_file(script).ok();
+    }
+
+    /// Regression: a real `kubectl port-forward` keeps its stderr pipe open for
+    /// the process's whole lifetime (it writes log lines to stderr). A monitor
+    /// that blocks on `stderr.read()` before reaching the `select!` that handles
+    /// the stop signal would NEVER stop such a process — the stop oneshot would
+    /// never be received. This fake keeps stderr open (a keepalive loop) and
+    /// never exits on its own, so Stop must work via the concurrent drain path.
+    #[tokio::test]
+    async fn stop_works_when_stderr_stays_open() {
+        let script = write_fake("stderr-live",
+            ":loop\necho keepalive 1>&2\ntimeout /t 1 /nobreak > nul\ngoto loop");
+        let k = Kubectl::with_binary(script.to_string_lossy().into_owned());
+        let mut cmd = k.build("dev", Some("default"), &[]);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        let child = cmd.spawn().unwrap();
+
+        let registry = PfRegistry::new();
+        let captured: Arc<Mutex<Vec<PfSessionView>>> = Arc::new(Mutex::new(vec![]));
+        let cap2 = captured.clone();
+        let id = registry.start("pf-stderr-live".into(), child, make_view("pf-stderr-live"), move |v| {
+            cap2.lock().unwrap().push(v);
+        });
+        assert_eq!(registry.list()[0].status, "running");
+
+        // Let the keepalive loop write to stderr so the pipe is genuinely active
+        // (mirrors real kubectl), then stop.
+        sleep(Duration::from_millis(400)).await;
+        registry.stop(&id);
+
+        for _ in 0..80 {
+            if captured.lock().unwrap().iter().any(|v| v.status == "stopped") { break; }
+            sleep(Duration::from_millis(50)).await;
+        }
+        let caps = captured.lock().unwrap().clone();
+        assert!(
+            caps.iter().any(|v| v.status == "stopped"),
+            "expected 'stopped' view (stderr stayed open); got: {:?}",
+            caps.iter().map(|v| &v.status).collect::<Vec<_>>()
+        );
 
         std::fs::remove_file(script).ok();
     }
