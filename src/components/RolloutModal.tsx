@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { DeploymentView, RolloutMode } from '../types';
-import { rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory } from '../api/tauri';
+import { rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions } from '../api/tauri';
 
 interface RolloutModalProps {
   deploy: DeploymentView;
@@ -176,17 +176,38 @@ function UndoPanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxNa
 
 function HistoryPanel({ deploy, ctxName }: { deploy: DeploymentView; ctxName: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['rollout-history', ctxName, deploy.namespace, deploy.name],
-    queryFn: () => rolloutHistory(ctxName, deploy.namespace, deploy.name),
+    queryKey: ['rollout-revisions', ctxName, deploy.namespace, deploy.name],
+    queryFn: () => getRolloutRevisions(ctxName, deploy.namespace, deploy.name),
     enabled: !!ctxName,
   });
 
   if (isLoading) return <div className="pod-modal-loading">Loading history…</div>;
   if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
-  if (!data) return <div className="pod-modal-empty">No history output.</div>;
+  if (!data || data.length === 0) return <div className="pod-modal-empty">No revisions found.</div>;
 
   return (
-    <pre className="describe-output mono">{data}</pre>
+    <table className="revision-table">
+      <thead>
+        <tr>
+          <th>Revision</th>
+          <th>Image</th>
+          <th>Created</th>
+          <th>Change cause</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((rev) => (
+          <tr key={rev.revision}>
+            <td className="col-revision">{rev.revision}</td>
+            <td className="col-image mono">{rev.image}</td>
+            <td className="col-created">{rev.created}</td>
+            <td className={rev.change_cause ? 'col-cause' : 'col-cause col-dash'}>
+              {rev.change_cause || '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

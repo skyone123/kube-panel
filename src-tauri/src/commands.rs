@@ -417,17 +417,19 @@ pub async fn rollout_undo(
 }
 
 #[tauri::command]
-pub async fn rollout_history(
+pub async fn get_rollout_revisions(
     context: String, namespace: String, name: String,
     rt: State<'_, KubeRuntime>,
-) -> Result<String, String> {
+) -> Result<Vec<crate::models::RolloutRevisionView>, String> {
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "rs", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "rs", "-o", "json"]
+    };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let args: Vec<String> = vec!["rollout".into(), "history".into(), format!("deployment/{}", name)];
-    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let res = rt.run(&context, ns_opt, &arg_refs).await
-        .map_err(|e| e.to_string())?;
+    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
-    Ok(res.stdout)
+    crate::models::parse_rollout_revisions(res.stdout.as_bytes(), &name).map_err(|e| e.to_string())
 }
 
 /// Start a `kubectl port-forward` child process. Returns the session id.

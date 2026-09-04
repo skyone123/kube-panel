@@ -1380,6 +1380,47 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   border: 1px solid rgba(210, 153, 34, 0.30);
 }
 
+/* Revision history table (reuse pod-table aesthetic) */
+.revision-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.revision-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-elevated);
+  text-align: left;
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.revision-table tbody td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text);
+  white-space: nowrap;
+}
+.revision-table tbody tr:last-child td { border-bottom: none; }
+.revision-table tbody tr:hover { background: var(--bg-hover); }
+.revision-table .col-revision { font-weight: 600; }
+.revision-table .col-image {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+.revision-table .col-created { color: var(--text-secondary); }
+.revision-table .col-cause { color: var(--text-secondary); }
+
 /* =========================================================================
    Port-forward panel
    ========================================================================= */

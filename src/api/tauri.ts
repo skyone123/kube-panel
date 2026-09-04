@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -72,8 +72,8 @@ export const rolloutScale = (context: string, namespace: string, name: string, r
   invoke<void>('rollout_scale', { context, namespace, name, replicas });
 export const rolloutUndo = (context: string, namespace: string, name: string, toRevision: number | null) =>
   invoke<void>('rollout_undo', { context, namespace, name, toRevision });
-export const rolloutHistory = (context: string, namespace: string, name: string) =>
-  invoke<string>('rollout_history', { context, namespace, name });
+export const getRolloutRevisions = (context: string, namespace: string, name: string) =>
+  invoke<RolloutRevisionView[]>('get_rollout_revisions', { context, namespace, name });
 
 // Port-forward operations
 export const startPortForward = (context: string, namespace: string, target: string, localPort: number, remotePort: number) =>

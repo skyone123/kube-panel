@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -49,10 +49,10 @@ describe('api wrappers', () => {
     expect(invoke).toHaveBeenCalledWith('rollout_undo', { context: 'dev', namespace: 'default', name: 'web', toRevision: null });
   });
 
-  it('rolloutHistory passes context + namespace + name', async () => {
-    (invoke as any).mockResolvedValue('');
-    await rolloutHistory('dev', 'default', 'web');
-    expect(invoke).toHaveBeenCalledWith('rollout_history', { context: 'dev', namespace: 'default', name: 'web' });
+  it('getRolloutRevisions passes context + namespace + name', async () => {
+    (invoke as any).mockResolvedValue([]);
+    await getRolloutRevisions('dev', 'default', 'web');
+    expect(invoke).toHaveBeenCalledWith('get_rollout_revisions', { context: 'dev', namespace: 'default', name: 'web' });
   });
 
   it('startPortForward passes context + namespace + target + ports', async () => {

@@ -453,6 +453,80 @@ pub fn parse_node_list(json: &[u8]) -> std::io::Result<Vec<NodeView>> {
 }
 
 // ---------------------------------------------------------------------------
+// ReplicaSet / rollout history parser
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReplicaSetList { pub items: Vec<ReplicaSetItem> }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReplicaSetItem {
+    pub metadata: ReplicaSetMeta,
+    #[serde(default)] pub spec: ReplicaSetSpec,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ReplicaSetMeta {
+    pub name: String,
+    pub creationTimestamp: String,
+    #[serde(default)] pub ownerReferences: Vec<OwnerRef>,
+    #[serde(default)] pub annotations: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OwnerRef {
+    #[serde(default)] pub kind: Option<String>,
+    #[serde(default)] pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ReplicaSetSpec { #[serde(default)] pub template: RsTemplate }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RsTemplate { #[serde(default)] pub spec: RsTemplateSpec }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RsTemplateSpec { #[serde(default)] pub containers: Vec<RsContainer> }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RsContainer { pub image: String }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RolloutRevisionView {
+    pub revision: String,
+    pub image: String,
+    pub created: String,
+    pub change_cause: String,
+}
+
+/// Parse `kubectl get rs -n <ns> -o json` into rollout revisions of `deploy_name`.
+/// Keeps only ReplicaSets whose ownerReferences include kind=Deployment name=deploy_name
+/// AND that have the revision annotation. Sorts by revision DESCENDING (newest first).
+pub fn parse_rollout_revisions(json: &[u8], deploy_name: &str) -> std::io::Result<Vec<RolloutRevisionView>> {
+    let list: ReplicaSetList = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let now = Utc::now();
+    let mut out: Vec<RolloutRevisionView> = list.items.into_iter()
+        .filter_map(|rs| {
+            let owned = rs.metadata.ownerReferences.iter().any(|o| {
+                o.kind.as_deref() == Some("Deployment") && o.name.as_deref() == Some(deploy_name)
+            });
+            if !owned { return None; }
+            let revision = rs.metadata.annotations.get("deployment.kubernetes.io/revision")?.clone();
+            let image = rs.spec.template.spec.containers.iter()
+                .map(|c| c.image.clone()).collect::<Vec<_>>().join(", ");
+            let created = age_string(&rs.metadata.creationTimestamp, now);
+            let change_cause = rs.metadata.annotations.get("kubernetes.io/change-cause")
+                .cloned().unwrap_or_default();
+            Some(RolloutRevisionView { revision, image, created, change_cause })
+        })
+        .collect();
+    out.sort_by(|a, b| b.revision.cmp(&a.revision));
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Watch event parser (live stream — compact NDJSON)
 // ---------------------------------------------------------------------------
 
@@ -649,6 +723,36 @@ mod tests {
         let view = parse_configmap_data(json).unwrap();
         assert_eq!(view.name, "empty-cm");
         assert!(view.entries.is_empty());
+    }
+
+    #[test]
+    fn parses_rollout_revisions_filters_and_sorts() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"web-abc","creationTimestamp":"2026-09-01T00:00:00Z",
+                    "ownerReferences":[{"kind":"Deployment","name":"skillhub-backend"}],
+                    "annotations":{"deployment.kubernetes.io/revision":"11"}},
+                 "spec":{"template":{"spec":{"containers":[{"image":"skillhub:v2"}]}}}},
+                {"metadata":{"name":"web-xyz","creationTimestamp":"2026-09-02T00:00:00Z",
+                    "ownerReferences":[{"kind":"Deployment","name":"skillhub-backend"}],
+                    "annotations":{"deployment.kubernetes.io/revision":"10","kubernetes.io/change-cause":"kubectl rollout restart"}},
+                 "spec":{"template":{"spec":{"containers":[{"image":"skillhub:v1"}]}}}},
+                {"metadata":{"name":"other-rs","creationTimestamp":"2026-09-01T00:00:00Z",
+                    "ownerReferences":[{"kind":"Deployment","name":"OTHER-deploy"}],
+                    "annotations":{"deployment.kubernetes.io/revision":"5"}},
+                 "spec":{"template":{"spec":{"containers":[{"image":"other:v9"}]}}}}
+            ]
+        }"#;
+        let views = parse_rollout_revisions(json, "skillhub-backend").unwrap();
+        assert_eq!(views.len(), 2, "should filter to RSs owned by skillhub-backend");
+        // newest first: revision 11 then 10
+        assert_eq!(views[0].revision, "11");
+        assert_eq!(views[0].image, "skillhub:v2");
+        assert!(!views[0].created.is_empty(), "created age should be non-empty");
+        assert_eq!(views[0].change_cause, "");
+        assert_eq!(views[1].revision, "10");
+        assert_eq!(views[1].image, "skillhub:v1");
+        assert_eq!(views[1].change_cause, "kubectl rollout restart");
     }
 
     #[test]

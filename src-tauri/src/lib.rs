@@ -50,7 +50,7 @@ pub fn run() {
             commands::rollout_restart,
             commands::rollout_scale,
             commands::rollout_undo,
-            commands::rollout_history,
+            commands::get_rollout_revisions,
             commands::start_port_forward,
             commands::stop_port_forward,
             commands::list_port_forwards,

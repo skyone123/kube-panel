@@ -56,3 +56,10 @@ export type NodeView = {
   cpu_allocatable: string;
   mem_allocatable: string;
 };
+
+export type RolloutRevisionView = {
+  revision: string;
+  image: string;
+  created: string;
+  change_cause: string;
+};
