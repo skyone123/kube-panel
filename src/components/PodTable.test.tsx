@@ -12,8 +12,8 @@ Object.defineProperty(navigator, 'clipboard', {
 });
 
 const pods: PodView[] = [
-  { name: 'nginx', namespace: 'default', ready: '1/1', status: 'Running', restarts: 0, age: '5m', ip: '10.0.0.1', node: 'n1', containers: ['nginx'], containerImages: [{ name: 'nginx', image: 'nginx:1.25', image_id: 'sha256:abc123' }] },
-  { name: 'crashy', namespace: 'default', ready: '0/1', status: 'CrashLoopBackOff', restarts: 7, age: '5m', ip: '10.0.0.2', node: 'n2', containers: ['app'], containerImages: [{ name: 'app', image: 'app:v1', image_id: 'sha256:def456' }] },
+  { name: 'nginx', namespace: 'default', ready: '1/1', status: 'Running', restarts: 0, age: '5m', ip: '10.0.0.1', node: 'n1', containers: ['nginx'], container_images: [{ name: 'nginx', image: 'nginx:1.25', image_id: 'sha256:abc123' }] },
+  { name: 'crashy', namespace: 'default', ready: '0/1', status: 'CrashLoopBackOff', restarts: 7, age: '5m', ip: '10.0.0.2', node: 'n2', containers: ['app'], container_images: [{ name: 'app', image: 'app:v1', image_id: 'sha256:def456' }] },
 ];
 
 describe('PodTable', () => {

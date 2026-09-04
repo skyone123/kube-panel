@@ -2,7 +2,7 @@ export type Context = { name: string; cluster: string; user: string; namespace: 
 
 export type ContainerImage = { name: string; image: string; image_id: string };
 
-export type PodView = { name: string; namespace: string; ready: string; status: string; restarts: number; age: string; ip: string; node: string; containers: string[]; containerImages: ContainerImage[] };
+export type PodView = { name: string; namespace: string; ready: string; status: string; restarts: number; age: string; ip: string; node: string; containers: string[]; container_images: ContainerImage[] };
 
 export type ConfigMapView = { name: string; keys: string[] };
 

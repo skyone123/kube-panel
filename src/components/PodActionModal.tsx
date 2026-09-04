@@ -35,7 +35,7 @@ function HighlightText({ text }: { text: string }) {
 }
 
 function ImagesPanel({ pod }: { pod: PodView }) {
-  const images = pod.containerImages ?? [];
+  const images = pod.container_images ?? [];
   if (images.length === 0) {
     return <div className="pod-modal-empty">No container images.</div>;
   }
@@ -274,7 +274,11 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
         <span>Only this pod</span>
       </label>
       {filtered.length === 0 ? (
-        <div className="pod-modal-empty">No events.</div>
+        <div className="pod-modal-empty">
+          {onlyThisPod
+            ? `No events for ${pod.name}. Uncheck “Only this pod” to see all events in ${pod.namespace}.`
+            : `No events in ${pod.namespace}.`}
+        </div>
       ) : (
         <table className="event-table">
           <thead>
