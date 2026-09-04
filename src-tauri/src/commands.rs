@@ -152,3 +152,59 @@ pub fn stop_log_stream(id: String, registry: State<'_, StreamRegistry>) -> Resul
     registry.stop(&id);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn describe_pod(
+    context: String, namespace: String, pod: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<String, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &["describe", "pod", &pod]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(res.stdout)
+}
+
+#[tauri::command]
+pub async fn get_events(
+    context: String, namespace: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<crate::models::EventView>, String> {
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "events", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "events", "-o", "json"]
+    };
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_event_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_configmaps(
+    context: String, namespace: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<crate::models::ConfigMapView>, String> {
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "cm", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "cm", "-o", "json"]
+    };
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_configmap_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_pod_configmaps(
+    context: String, namespace: String, pod: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<String>, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &["get", "pod", &pod, "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_pod_configmap_refs(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
