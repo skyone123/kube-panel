@@ -1687,3 +1687,81 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 .resource-table td {
   white-space: nowrap;
 }
+
+/* =========================================================================
+   Exec terminal modal
+   ========================================================================= */
+.exec-modal {
+  width: 80vw;
+  max-width: 1200px;
+  height: 60vh;
+  max-height: 80vh;
+}
+.exec-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: rgba(255, 255, 255, 0.015);
+  flex-wrap: wrap;
+}
+.exec-toolbar .exec-cmd-input {
+  width: 160px;
+}
+.exec-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.exec-connect-btn {
+  color: var(--accent-bright) !important;
+  border-color: rgba(56, 139, 253, 0.40) !important;
+  background: rgba(56, 139, 253, 0.08) !important;
+}
+.exec-connect-btn:hover:not(:disabled) {
+  background: rgba(56, 139, 253, 0.15) !important;
+  border-color: var(--accent) !important;
+}
+.exec-disconnect-btn {
+  color: var(--status-error) !important;
+  border-color: rgba(248, 81, 73, 0.35) !important;
+}
+.exec-disconnect-btn:hover {
+  background: var(--status-error-bg) !important;
+  border-color: var(--status-error) !important;
+}
+.exec-terminal-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  position: relative;
+}
+.exec-terminal {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+}
+.exec-error {
+  position: absolute;
+  inset: 0;
+  padding: 24px 16px;
+  color: var(--status-error);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: rgba(13, 17, 23, 0.95);
+  overflow: auto;
+}
+.exec-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12.5px;
+  background: #0d1117;
+}

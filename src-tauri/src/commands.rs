@@ -5,6 +5,7 @@ use crate::runtime::{build_history_entry, KubeRuntime};
 use crate::models::{self, PodView, DeploymentView};
 use crate::stream::StreamRegistry;
 use crate::portforward::PfRegistry;
+use crate::exec::ExecRegistry;
 
 #[tauri::command]
 pub fn list_contexts() -> Result<Vec<ContextView>, String> {
@@ -522,6 +523,58 @@ pub async fn describe_node(context: String, name: String, rt: State<'_, KubeRunt
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     Ok(res.stdout)
+}
+
+/// Start a `kubectl exec -it` session in a PTY. Returns the session id.
+/// PTY output is emitted to the frontend as `pty_data` events `{ id, data }`.
+/// When the child exits, a `pty_exit` event `{ id, code }` is emitted.
+///
+/// History: ONE row recorded with `is_stream=true`, `exit_code=None` (final
+/// exit code not known at start). PTY output is NEVER written to history.
+#[tauri::command]
+pub async fn start_exec(
+    context: String,
+    namespace: String,
+    pod: String,
+    container: String,
+    command: Vec<String>,
+    _rt: State<'_, KubeRuntime>,
+    execs: State<'_, ExecRegistry>,
+    history: State<'_, History>,
+    app: AppHandle,
+) -> Result<String, String> {
+    // Build a representative argv for history (metadata-only, is_stream=true).
+    let mut hist_argv: Vec<String> = vec![
+        "exec".into(), "-it".into(), pod.clone(), "-c".into(), container.clone(), "--".into(),
+    ];
+    hist_argv.extend(command.iter().cloned());
+    let hist_refs: Vec<&str> = hist_argv.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let entry = build_history_entry(&context, ns_opt, &hist_refs, None, 0, true);
+    if let Err(e) = history.insert(&entry) {
+        eprintln!("[kube-panel] history insert failed for exec: {e}");
+    }
+
+    // Start the PTY session (uses build_cmd semantics — discrete argv, no shell).
+    execs.start(app, &context, &namespace, &pod, &container, command)
+}
+
+/// Send user keystrokes to a PTY session by id.
+#[tauri::command]
+pub fn send_pty_input(id: String, data: String, execs: State<'_, ExecRegistry>) -> Result<(), String> {
+    execs.send_input(&id, &data)
+}
+
+/// Resize a PTY session to the given cols/rows.
+#[tauri::command]
+pub fn resize_pty(id: String, cols: u16, rows: u16, execs: State<'_, ExecRegistry>) -> Result<(), String> {
+    execs.resize(&id, cols, rows)
+}
+
+/// Stop a PTY session by id. Kills the child + drops the master → reader EOFs.
+#[tauri::command]
+pub fn stop_exec(id: String, execs: State<'_, ExecRegistry>) -> Result<(), String> {
+    execs.stop(&id)
 }
 
 #[tauri::command]

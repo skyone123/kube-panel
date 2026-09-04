@@ -12,7 +12,7 @@ export type ConfigMapDataView = { name: string; entries: ConfigMapEntry[] };
 export type EventView = { last_timestamp: string; type_: string; reason: string; message: string; involved_name: string };
 export type EventChunk = { id: string; event: EventView };
 
-export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events' | 'yaml';
+export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events' | 'yaml' | 'exec';
 
 export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history';
 

@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands;
+mod exec;
 mod history;
 mod kubeconfig;
 mod kubectl;
@@ -8,6 +9,8 @@ mod portforward;
 mod runtime;
 mod stream;
 
+use tauri::Manager;
+use exec::ExecRegistry;
 use history::History;
 use kubectl::Kubectl;
 use portforward::PfRegistry;
@@ -21,12 +24,13 @@ pub fn run() {
         .expect("failed to open history db");
     let runtime = KubeRuntime::new(kubectl, history.clone());
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(runtime)
         .manage(history)
         .manage(StreamRegistry::new())
         .manage(PfRegistry::new())
+        .manage(ExecRegistry::new())
         .invoke_handler(tauri::generate_handler![
             commands::list_contexts,
             commands::current_context,
@@ -59,7 +63,19 @@ pub fn run() {
             commands::describe_node,
             commands::get_resources,
             commands::describe_resource,
+            commands::start_exec,
+            commands::send_pty_input,
+            commands::resize_pty,
+            commands::stop_exec,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            if let Some(execs) = app_handle.try_state::<ExecRegistry>() {
+                execs.stop_all();
+            }
+        }
+    });
 }

@@ -96,3 +96,21 @@ export const getResources = (context: string, namespace: string, kind: ResourceK
   invoke<ResourceListView>('get_resources', { context, namespace, kind });
 export const describeResource = (context: string, namespace: string, kind: ResourceKind, name: string) =>
   invoke<string>('describe_resource', { context, namespace, kind, name });
+
+// Exec terminal (PTY) operations
+export const startExec = (context: string, namespace: string, pod: string, container: string, command: string[]) =>
+  invoke<string>('start_exec', { context, namespace, pod, container, command });
+export const sendPtyInput = (id: string, data: string) => invoke<void>('send_pty_input', { id, data });
+export const resizePty = (id: string, cols: number, rows: number) => invoke<void>('resize_pty', { id, cols, rows });
+export const stopExec = (id: string) => invoke<void>('stop_exec', { id });
+
+export type PtyData = { id: string; data: string };
+export type PtyExit = { id: string; code: number | null };
+
+export function onPtyData(cb: (e: PtyData) => void): Promise<UnlistenFn> {
+  return listen<PtyData>('pty_data', (e) => cb(e.payload));
+}
+
+export function onPtyExit(cb: (e: PtyExit) => void): Promise<UnlistenFn> {
+  return listen<PtyExit>('pty_exit', (e) => cb(e.payload));
+}

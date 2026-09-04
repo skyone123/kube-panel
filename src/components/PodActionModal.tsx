@@ -17,6 +17,7 @@ function modeTitle(mode: PodActionMode): string {
     case 'describe': return 'Describe';
     case 'events': return 'Events';
     case 'yaml': return 'YAML';
+    case 'exec': return 'Exec';
   }
 }
 

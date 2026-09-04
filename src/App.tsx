@@ -10,6 +10,7 @@ import { MergedLogViewer } from './components/MergedLogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
 import { NamespaceSwitcher } from './components/NamespaceSwitcher';
 import { PodActionModal } from './components/PodActionModal';
+import { ExecTerminal } from './components/ExecTerminal';
 import { RolloutModal } from './components/RolloutModal';
 import { PortForwardPanel } from './components/PortForwardPanel';
 import { ResourceBrowser } from './components/ResourceBrowser';
@@ -189,7 +190,8 @@ export default function App() {
           </div>
         </div>
       </div>
-      {podAction && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
+      {podAction && podAction.mode !== 'exec' && <PodActionModal pod={podAction.pod} mode={podAction.mode} onClose={() => setPodAction(null)} />}
+      {podAction?.mode === 'exec' && <ExecTerminal pod={podAction.pod} ctxName={ctxName} onClose={() => setPodAction(null)} />}
       {rolloutAction && <RolloutModal deploy={rolloutAction.deploy} mode={rolloutAction.mode} ctxName={ctxName} onClose={() => setRolloutAction(null)} />}
       {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
       {showPf && <PortForwardPanel ctxName={ctxName} namespace={namespace} onClose={() => setShowPf(false)} />}
