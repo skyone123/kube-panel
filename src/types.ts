@@ -41,3 +41,17 @@ export type PfSessionView = {
   status: string;
   message: string;
 };
+
+export type NodeView = {
+  name: string;
+  ready: boolean;
+  status: string;
+  roles: string[];
+  version: string;
+  os: string;
+  internal_ip: string;
+  age: string;
+  pressure: string[];
+  cpu_allocatable: string;
+  mem_allocatable: string;
+};

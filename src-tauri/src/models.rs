@@ -325,6 +325,133 @@ pub fn parse_pod_configmap_refs(json: &[u8]) -> std::io::Result<Vec<String>> {
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Node parser
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodeList { pub items: Vec<NodeItem> }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodeItem {
+    pub metadata: NodeMeta,
+    #[serde(default)] pub status: NodeStatus,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodeMeta {
+    pub name: String,
+    #[serde(default)] pub labels: BTreeMap<String, String>,
+    pub creationTimestamp: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NodeStatus {
+    #[serde(default)] pub nodeInfo: Option<NodeInfo>,
+    #[serde(default)] pub conditions: Vec<NodeCondition>,
+    #[serde(default)] #[allow(dead_code)] pub capacity: BTreeMap<String, String>,
+    #[serde(default)] pub allocatable: BTreeMap<String, String>,
+    #[serde(default)] pub addresses: Vec<NodeAddress>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NodeInfo {
+    #[serde(default)] pub kubeletVersion: Option<String>,
+    #[serde(default)] pub operatingSystem: Option<String>,
+    #[serde(default)] pub architecture: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodeCondition {
+    #[serde(rename = "type")] pub type_: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodeAddress {
+    #[serde(rename = "type")] pub type_: String,
+    pub address: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NodeView {
+    pub name: String,
+    pub ready: bool,
+    pub status: String,
+    pub roles: Vec<String>,
+    pub version: String,
+    pub os: String,
+    pub internal_ip: String,
+    pub age: String,
+    pub pressure: Vec<String>,
+    pub cpu_allocatable: String,
+    pub mem_allocatable: String,
+}
+
+pub fn parse_node_list(json: &[u8]) -> std::io::Result<Vec<NodeView>> {
+    let list: NodeList = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let now = Utc::now();
+    let mut out = Vec::with_capacity(list.items.len());
+    for n in list.items {
+        let ready = n.status.conditions.iter()
+            .find(|c| c.type_ == "Ready")
+            .map(|c| c.status == "True")
+            .unwrap_or(false);
+        let status = if ready { "Ready" } else { "NotReady" }.to_string();
+        // roles from labels: node-role.kubernetes.io/<role>
+        let mut roles: Vec<String> = n.metadata.labels.keys()
+            .filter_map(|k| k.strip_prefix("node-role.kubernetes.io/").map(|s| s.to_string()))
+            .filter(|s| !s.is_empty())
+            .collect();
+        roles.sort();
+        roles.dedup();
+        // pressure: MemoryPressure / PIDPressure / DiskPressure with status=="True"
+        let mut pressure: Vec<String> = n.status.conditions.iter()
+            .filter(|c| matches!(c.type_.as_str(), "MemoryPressure" | "PIDPressure" | "DiskPressure") && c.status == "True")
+            .map(|c| c.type_.clone())
+            .collect();
+        pressure.sort();
+        pressure.dedup();
+        let internal_ip = n.status.addresses.iter()
+            .find(|a| a.type_ == "InternalIP")
+            .map(|a| a.address.clone())
+            .unwrap_or_default();
+        let version = n.status.nodeInfo.as_ref()
+            .and_then(|i| i.kubeletVersion.clone())
+            .unwrap_or_default();
+        let os = match (n.status.nodeInfo.as_ref(), n.status.nodeInfo.as_ref()) {
+            (Some(info), _) => {
+                let os_str = info.operatingSystem.as_deref().unwrap_or("");
+                let arch_str = info.architecture.as_deref().unwrap_or("");
+                if os_str.is_empty() && arch_str.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}/{}", os_str, arch_str)
+                }
+            }
+            _ => String::new(),
+        };
+        let cpu_allocatable = n.status.allocatable.get("cpu").cloned().unwrap_or_default();
+        let mem_allocatable = n.status.allocatable.get("memory").cloned().unwrap_or_default();
+        let age = age_string(&n.metadata.creationTimestamp, now);
+        out.push(NodeView {
+            name: n.metadata.name,
+            ready,
+            status,
+            roles,
+            version,
+            os,
+            internal_ip,
+            age,
+            pressure,
+            cpu_allocatable,
+            mem_allocatable,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,5 +621,74 @@ mod tests {
         let view = parse_configmap_data(json).unwrap();
         assert_eq!(view.name, "empty-cm");
         assert!(view.entries.is_empty());
+    }
+
+    #[test]
+    fn parses_node_list_ready_pressure_roles() {
+        let json = br#"{
+            "items": [
+                {
+                    "metadata": {
+                        "name": "control-node",
+                        "labels": {"node-role.kubernetes.io/control-plane": ""},
+                        "creationTimestamp": "2024-01-01T00:00:00Z"
+                    },
+                    "status": {
+                        "nodeInfo": {"kubeletVersion": "v1.30.0", "operatingSystem": "linux", "architecture": "amd64"},
+                        "conditions": [
+                            {"type": "Ready", "status": "True"},
+                            {"type": "MemoryPressure", "status": "False"},
+                            {"type": "PIDPressure", "status": "False"},
+                            {"type": "DiskPressure", "status": "False"}
+                        ],
+                        "capacity": {"cpu": "8", "memory": "32Gi", "pods": "110"},
+                        "allocatable": {"cpu": "4", "memory": "16Gi", "pods": "110"},
+                        "addresses": [{"type": "InternalIP", "address": "10.0.0.5"}, {"type": "Hostname", "address": "control-node"}]
+                    }
+                },
+                {
+                    "metadata": {
+                        "name": "worker-node",
+                        "labels": {},
+                        "creationTimestamp": "2024-01-01T00:00:00Z"
+                    },
+                    "status": {
+                        "nodeInfo": {"kubeletVersion": "v1.29.0"},
+                        "conditions": [
+                            {"type": "Ready", "status": "False"},
+                            {"type": "MemoryPressure", "status": "True"},
+                            {"type": "PIDPressure", "status": "False"},
+                            {"type": "DiskPressure", "status": "False"}
+                        ],
+                        "allocatable": {"cpu": "2", "memory": "8Gi"},
+                        "addresses": [{"type": "InternalIP", "address": "10.0.0.6"}]
+                    }
+                }
+            ]
+        }"#;
+        let views = parse_node_list(json).unwrap();
+        assert_eq!(views.len(), 2);
+        // Node A: control-node
+        let a = views.iter().find(|v| v.name == "control-node").unwrap();
+        assert_eq!(a.ready, true);
+        assert_eq!(a.status, "Ready");
+        assert_eq!(a.roles, vec!["control-plane"]);
+        assert_eq!(a.pressure, Vec::<String>::new());
+        assert_eq!(a.version, "v1.30.0");
+        assert_eq!(a.os, "linux/amd64");
+        assert_eq!(a.internal_ip, "10.0.0.5");
+        assert_eq!(a.cpu_allocatable, "4");
+        assert_eq!(a.mem_allocatable, "16Gi");
+        assert!(!a.age.is_empty());
+        // Node B: worker-node
+        let b = views.iter().find(|v| v.name == "worker-node").unwrap();
+        assert_eq!(b.ready, false);
+        assert_eq!(b.status, "NotReady");
+        assert_eq!(b.pressure, vec!["MemoryPressure"]);
+        assert_eq!(b.roles, Vec::<String>::new());
+        assert_eq!(b.version, "v1.29.0");
+        assert_eq!(b.internal_ip, "10.0.0.6");
+        assert_eq!(b.cpu_allocatable, "2");
+        assert_eq!(b.mem_allocatable, "8Gi");
     }
 }

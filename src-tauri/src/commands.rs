@@ -450,3 +450,21 @@ pub fn clear_port_forward(id: String, registry: State<'_, PfRegistry>) -> Result
     registry.remove(&id);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_nodes(context: String, rt: State<'_, KubeRuntime>) -> Result<Vec<crate::models::NodeView>, String> {
+    // Nodes are cluster-scoped: ns_opt=None, NO --all-namespaces
+    let res = rt.run(&context, None, &["get", "nodes", "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_node_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn describe_node(context: String, name: String, rt: State<'_, KubeRuntime>) -> Result<String, String> {
+    // Nodes are cluster-scoped: ns_opt=None
+    let res = rt.run(&context, None, &["describe", "node", &name]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(res.stdout)
+}

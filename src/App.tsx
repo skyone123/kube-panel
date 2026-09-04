@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
 import { DeploymentTable } from './components/DeploymentTable';
+import { NodeTable } from './components/NodeTable';
+import { NodeDescribeModal } from './components/NodeDescribeModal';
 import { LogViewer } from './components/LogViewer';
 import { MergedLogViewer } from './components/MergedLogViewer';
 import { HistoryPanel } from './components/HistoryPanel';
@@ -11,8 +13,8 @@ import { PodActionModal } from './components/PodActionModal';
 import { RolloutModal } from './components/RolloutModal';
 import { PortForwardPanel } from './components/PortForwardPanel';
 import { useAppStore } from './stores/appStore';
-import { getPods, getDeployments, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
-import type { PodView, PodActionMode, DeploymentView, RolloutMode } from './types';
+import { getPods, getDeployments, getNodes, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
+import type { PodView, PodActionMode, DeploymentView, RolloutMode, NodeView } from './types';
 import './App.css';
 
 export default function App() {
@@ -22,8 +24,9 @@ export default function App() {
   const [histQuery, setHistQuery] = useState('');
   const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
   const [merge, setMerge] = useState<{ id: string; pods: PodView[] } | null>(null);
-  const [resourceTab, setResourceTab] = useState<'pods' | 'deployments'>('pods');
+  const [resourceTab, setResourceTab] = useState<'pods' | 'deployments' | 'nodes'>('pods');
   const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
+  const [nodeDescribe, setNodeDescribe] = useState<{ node: NodeView } | null>(null);
   const [showPf, setShowPf] = useState(false);
   const [live, setLive] = useState(true);
   const refetchInterval = live ? 5000 : false;
@@ -47,16 +50,22 @@ export default function App() {
     enabled: !!ctxName,
     refetchInterval,
   });
+  const { data: nodes = [] } = useQuery({
+    queryKey: ['nodes', ctxName],
+    queryFn: () => getNodes(ctxName),
+    enabled: !!ctxName,
+    refetchInterval,
+  });
   const { data: history = [] } = useQuery({ queryKey: ['history'], queryFn: () => listHistory(100) });
 
   const podCount = pods.length;
   const deployCount = deployments.length;
+  const nodeCount = nodes.length;
   const histCount = history.length;
 
   return (
     <div className="app-shell">
-      <Sidebar ctxName={ctxName} cluster={current?.cluster ?? null} podCount={podCount} histCount={histCount} />
-      <div className="app-main">
+      <Sidebar ctxName={ctxName} cluster={current?.cluster ?? null} podCount={podCount} histCount={histCount} />      <div className="app-main">
         <header className="topbar">
           <div className="topbar-context">
             <span className="ctx-label">CONTEXT</span>
@@ -95,6 +104,10 @@ export default function App() {
                   className={`resource-tab${resourceTab === 'deployments' ? ' active' : ''}`}
                   onClick={() => setResourceTab('deployments')}
                 >Deployments</button>
+                <button
+                  className={`resource-tab${resourceTab === 'nodes' ? ' active' : ''}`}
+                  onClick={() => setResourceTab('nodes')}
+                >Nodes</button>
               </div>
               <button
                 className={`live-toggle${live ? ' live' : ' paused'}`}
@@ -104,7 +117,9 @@ export default function App() {
                 <span className="live-dot" />
                 {live ? 'Live' : 'Paused'}
               </button>
-              <span className="head-meta">{resourceTab === 'pods' ? `${podCount} running` : `${deployCount} deployments`}</span>
+              <span className="head-meta">
+                {resourceTab === 'pods' ? `${podCount} running` : resourceTab === 'deployments' ? `${deployCount} deployments` : `${nodeCount} nodes`}
+              </span>
               <span className="spacer" />
             </div>
             <div className="pod-table-wrap">
@@ -118,8 +133,10 @@ export default function App() {
                     /* noop */
                   }
                 }} />
-              ) : (
+              ) : resourceTab === 'deployments' ? (
                 <DeploymentTable deployments={deployments} query={q} onAction={(deploy, mode) => setRolloutAction({ deploy, mode })} />
+              ) : (
+                <NodeTable nodes={nodes} query={q} onDescribe={node => setNodeDescribe({ node })} />
               )}
             </div>
           </section>
@@ -169,6 +186,7 @@ export default function App() {
       {rolloutAction && <RolloutModal deploy={rolloutAction.deploy} mode={rolloutAction.mode} ctxName={ctxName} onClose={() => setRolloutAction(null)} />}
       {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
       {showPf && <PortForwardPanel ctxName={ctxName} namespace={namespace} onClose={() => setShowPf(false)} />}
+      {nodeDescribe && <NodeDescribeModal node={nodeDescribe.node} ctxName={ctxName} onClose={() => setNodeDescribe(null)} />}
     </div>
   );
 }

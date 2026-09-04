@@ -54,6 +54,8 @@ pub fn run() {
             commands::stop_port_forward,
             commands::list_port_forwards,
             commands::clear_port_forward,
+            commands::get_nodes,
+            commands::describe_node,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

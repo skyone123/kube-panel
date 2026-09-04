@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -77,3 +77,7 @@ export const clearPortForward = (id: string) => invoke<void>('clear_port_forward
 export function onPfStatus(cb: (v: PfSessionView) => void): Promise<UnlistenFn> {
   return listen<PfSessionView>('pf_status', (e) => cb(e.payload));
 }
+
+// Node operations (cluster-scoped)
+export const getNodes = (context: string) => invoke<NodeView[]>('get_nodes', { context });
+export const describeNode = (context: string, name: string) => invoke<string>('describe_node', { context, name });

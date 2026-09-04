@@ -534,6 +534,29 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   font-size: 12.5px;
 }
 
+/* ---------- Node table extras ---------- */
+.role-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  background: var(--status-ok-bg);
+  color: var(--status-ok);
+  margin-right: 4px;
+}
+.pressure-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  background: var(--status-error-bg);
+  color: var(--status-error);
+  margin-right: 4px;
+}
+.col-dash {
+  color: var(--text-muted);
+}
+
 /* ---------- Split: logs + history ---------- */
 .split {
   flex: 1 1 auto;
