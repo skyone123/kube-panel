@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory, startPortForward, stopPortForward, listPortForwards, clearPortForward } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutHistory, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -77,5 +77,11 @@ describe('api wrappers', () => {
     (invoke as any).mockResolvedValue(undefined);
     await clearPortForward('pf-0');
     expect(invoke).toHaveBeenCalledWith('clear_port_forward', { id: 'pf-0' });
+  });
+
+  it('streamEvents passes context + namespace', async () => {
+    (invoke as any).mockResolvedValue('s-0');
+    await streamEvents('dev', 'default');
+    expect(invoke).toHaveBeenCalledWith('stream_events', { context: 'dev', namespace: 'default' });
   });
 });

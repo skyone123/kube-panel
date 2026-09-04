@@ -452,6 +452,34 @@ pub fn parse_node_list(json: &[u8]) -> std::io::Result<Vec<NodeView>> {
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Watch event parser (live stream — compact NDJSON)
+// ---------------------------------------------------------------------------
+
+/// A single line from `kubectl get --raw '...?watch=true&resourceVersion=0'`.
+/// Compact NDJSON: `{"type":"ADDED","object":{<Event>}}`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WatchEvent {
+    #[serde(default, rename = "type")]
+    #[allow(dead_code)]
+    pub type_: Option<String>,   // "ADDED"|"MODIFIED"|"DELETED" — unused by the view, but parsed
+    pub object: EventItem,        // reuse the existing EventItem
+}
+
+/// Parse one NDJSON watch line into an EventView. Returns Err on malformed JSON
+/// (the caller skips Err lines — a partial line is not yet a complete record).
+pub fn parse_watch_event_line(json: &[u8]) -> std::io::Result<EventView> {
+    let we: WatchEvent = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(EventView {
+        last_timestamp: we.object.lastTimestamp.unwrap_or_default(),
+        type_: we.object.type_.unwrap_or_default(),
+        reason: we.object.reason.unwrap_or_default(),
+        message: we.object.message.unwrap_or_default(),
+        involved_name: we.object.involvedObject.and_then(|o| o.name).unwrap_or_default(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,6 +649,29 @@ mod tests {
         let view = parse_configmap_data(json).unwrap();
         assert_eq!(view.name, "empty-cm");
         assert!(view.entries.is_empty());
+    }
+
+    #[test]
+    fn parses_watch_event_line_into_eventview() {
+        let line = br#"{"type":"ADDED","object":{"lastTimestamp":"2026-01-01T10:00:00Z","type":"Warning","reason":"BackOff","message":"back-off","involvedObject":{"name":"pod-x"}}}"#;
+        let ev = parse_watch_event_line(line).unwrap();
+        assert_eq!(ev.last_timestamp, "2026-01-01T10:00:00Z");
+        assert_eq!(ev.type_, "Warning");
+        assert_eq!(ev.reason, "BackOff");
+        assert_eq!(ev.message, "back-off");
+        assert_eq!(ev.involved_name, "pod-x");
+    }
+
+    #[test]
+    fn parses_watch_event_line_missing_optional_fields_returns_empty_strings() {
+        // No lastTimestamp, type, reason, message, or involvedObject — should not error
+        let line = br#"{"type":"ADDED","object":{}}"#;
+        let ev = parse_watch_event_line(line).unwrap();
+        assert_eq!(ev.last_timestamp, "");
+        assert_eq!(ev.type_, "");
+        assert_eq!(ev.reason, "");
+        assert_eq!(ev.message, "");
+        assert_eq!(ev.involved_name, "");
     }
 
     #[test]

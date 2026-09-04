@@ -1168,9 +1168,50 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   display: flex;
   flex-direction: column;
 }
-.events-filter {
+.events-head-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-muted);
+}
+.events-live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  color: var(--text-muted);
+}
+.events-live-toggle:hover {
+  background: var(--bg-hover);
+}
+.events-live-toggle.live {
+  color: var(--status-ok);
+}
+.events-live-toggle.paused {
+  color: var(--text-muted);
+}
+.events-live-toggle .live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.events-live-toggle.live .live-dot {
+  background: var(--status-ok);
+  box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+}
+.events-live-toggle.paused .live-dot {
+  background: var(--text-muted);
+}
+.events-filter {
   font-size: 11.5px;
   color: var(--text-secondary);
 }

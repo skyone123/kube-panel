@@ -147,6 +147,59 @@ pub async fn stream_pod_logs(
     Ok(id)
 }
 
+/// A live event pushed to the frontend via the `event_chunk` event.
+#[derive(serde::Serialize, Clone)]
+pub struct EventChunk {
+    pub id: String,
+    pub event: crate::models::EventView,
+}
+
+/// Start a live watch of cluster events. Returns the stream id; the frontend
+/// subscribes to `event_chunk` events filtered by id. Stops via stop_log_stream.
+/// Uses `kubectl get --raw /api/v1/[namespaces/<ns>/]events?watch=true&resourceVersion=0`
+/// which streams compact NDJSON (one WatchEvent per line) — parsed per line into
+/// EventView. resourceVersion=0 replays current events as ADDED then live updates.
+#[tauri::command]
+pub async fn stream_events(
+    context: String,
+    namespace: String,           // "" = all-namespaces (cluster-wide)
+    rt: State<'_, KubeRuntime>,
+    registry: State<'_, StreamRegistry>,
+    history: State<'_, History>,
+    app: AppHandle,
+) -> Result<String, String> {
+    // Build the raw watch path. Namespace "" → cluster-wide; else namespaced.
+    let path = if namespace.is_empty() {
+        "/api/v1/events?watch=true&resourceVersion=0".to_string()
+    } else {
+        format!("/api/v1/namespaces/{}/events?watch=true&resourceVersion=0", namespace)
+    };
+    let args: Vec<String> = vec!["get".into(), "--raw".into(), path.clone()];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    // --raw ignores -n; the path encodes the namespace. ns_opt=None.
+    let mut cmd = rt.build_cmd(&context, None, &arg_refs);
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    // Record ONE history row (metadata-only, is_stream=true).
+    let hist_argv: Vec<&str> = vec!["get", "--raw", "<events-watch>"];
+    let entry = build_history_entry(&context, None, &hist_argv, None, 0, true);
+    if let Err(e) = history.insert(&entry) { eprintln!("[kube-panel] history insert failed for events stream: {e}"); }
+
+    let id = crate::stream::new_id();
+    let id_for_emit = id.clone();
+    let id_ret = registry.start(id, child, move |text| {
+        // Each `text` is one NDJSON line (StreamRegistry reads line-by-line).
+        // Skip partial/empty lines silently.
+        if let Ok(event) = crate::models::parse_watch_event_line(text.as_bytes()) {
+            let _ = app.emit("event_chunk", EventChunk { id: id_for_emit.clone(), event });
+        }
+    });
+    Ok(id_ret)
+}
+
 /// Stop a running log stream by id. Kills the child process synchronously.
 #[tauri::command]
 pub fn stop_log_stream(id: String, registry: State<'_, StreamRegistry>) -> Result<(), String> {

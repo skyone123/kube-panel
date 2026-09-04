@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts } from '../api/tauri';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk } from '../api/tauri';
 
 interface PodActionModalProps {
   pod: PodView;
@@ -239,15 +239,94 @@ function DescribePanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
   );
 }
 
+const MAX_EVENTS = 500;
+
 function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
+  const [live, setLive] = useState(true);
+  const [events, setEvents] = useState<EventView[]>([]);
   const [onlyThisPod, setOnlyThisPod] = useState(true);
-  const { data, isLoading, error } = useQuery({
+  const streamIdRef = useRef<string | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
+
+  // Snapshot mode: one-shot query, only enabled when live is off.
+  const snapshotQuery = useQuery({
     queryKey: ['events', ctxName, pod.namespace],
     queryFn: () => getEvents(ctxName, pod.namespace),
-    enabled: !!ctxName,
+    enabled: !!ctxName && !live,
   });
 
-  const events: EventView[] = data ?? [];
+  // When not live, sync snapshot data into events buffer.
+  useEffect(() => {
+    if (!live && snapshotQuery.data) {
+      setEvents(snapshotQuery.data);
+    }
+  }, [live, snapshotQuery.data]);
+
+  // Live streaming lifecycle — mirrors LogViewer's pattern.
+  useEffect(() => {
+    // Tear down any active stream + listener before (re)starting.
+    let cancelled = false;
+    const prevId = streamIdRef.current;
+    const prevUnlisten = unlistenRef.current;
+    streamIdRef.current = null;
+    unlistenRef.current = null;
+
+    const teardown = async () => {
+      if (prevUnlisten) { try { prevUnlisten(); } catch { /* noop */ } }
+      if (prevId) { try { await stopLogStream(prevId); } catch { /* noop */ } }
+    };
+    teardown();
+
+    // Reset buffer on each new stream.
+    setEvents([]);
+
+    if (!live || !ctxName) {
+      return () => { /* cleanup already triggered above via teardown */ };
+    }
+
+    let active = true;
+    (async () => {
+      try {
+        const id = await streamEvents(ctxName, pod.namespace);
+        if (!active || cancelled) {
+          try { await stopLogStream(id); } catch { /* noop */ }
+          return;
+        }
+        const unlisten = await onEventChunk((chunk) => {
+          if (chunk.id !== streamIdRef.current) return;
+          setEvents(prev => {
+            const next = prev.concat(chunk.event);
+            if (next.length > MAX_EVENTS) {
+              return next.slice(next.length - MAX_EVENTS);
+            }
+            return next;
+          });
+        });
+        if (!active || cancelled) {
+          try { unlisten(); } catch { /* noop */ }
+          try { await stopLogStream(id); } catch { /* noop */ }
+          return;
+        }
+        streamIdRef.current = id;
+        unlistenRef.current = unlisten;
+      } catch {
+        /* stream start failed — buffer stays empty */
+      }
+    })();
+
+    return () => {
+      active = false;
+      cancelled = true;
+      const id = streamIdRef.current;
+      const un = unlistenRef.current;
+      streamIdRef.current = null;
+      unlistenRef.current = null;
+      if (un) { try { un(); } catch { /* noop */ } }
+      if (id) { try { void stopLogStream(id); } catch { /* noop */ } }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxName, pod.namespace, live]);
+
   const filtered = useMemo(() => {
     let list = events;
     if (onlyThisPod) {
@@ -261,24 +340,39 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     });
   }, [events, onlyThisPod, pod.name]);
 
-  if (isLoading) return <div className="pod-modal-loading">Loading events…</div>;
-  if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
+  const isLoading = live ? false : snapshotQuery.isLoading;
+  const error = live ? null : snapshotQuery.error;
 
   return (
     <div className="events-wrap">
-      <label className="events-filter lc-check">
-        <input
-          type="checkbox"
-          checked={onlyThisPod}
-          onChange={e => setOnlyThisPod(e.target.checked)}
-        />
-        <span>Only this pod</span>
-      </label>
-      {filtered.length === 0 ? (
+      <div className="events-head-row">
+        <button
+          className={`events-live-toggle${live ? ' live' : ' paused'}`}
+          onClick={() => setLive(v => !v)}
+        >
+          <span className="live-dot" />
+          {live ? 'Live' : 'Paused'}
+        </button>
+        <label className="events-filter lc-check">
+          <input
+            type="checkbox"
+            checked={onlyThisPod}
+            onChange={e => setOnlyThisPod(e.target.checked)}
+          />
+          <span>Only this pod</span>
+        </label>
+      </div>
+      {isLoading ? (
+        <div className="pod-modal-loading">Loading events…</div>
+      ) : error ? (
+        <div className="pod-modal-error">Error: {(error as Error).message}</div>
+      ) : filtered.length === 0 ? (
         <div className="pod-modal-empty">
-          {onlyThisPod
-            ? `No events for ${pod.name}. Uncheck “Only this pod” to see all events in ${pod.namespace}.`
-            : `No events in ${pod.namespace}.`}
+          {live
+            ? 'Watching for events…'
+            : onlyThisPod
+              ? `No events for ${pod.name}. Uncheck "Only this pod" to see all events in ${pod.namespace}.`
+              : `No events in ${pod.namespace}.`}
         </div>
       ) : (
         <table className="event-table">
