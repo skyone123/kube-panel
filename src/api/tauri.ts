@@ -9,6 +9,11 @@ export const getPods = (context: string, namespace: string) => invoke<PodView[]>
 export const listNamespaces = (context: string) => invoke<string[]>('list_namespaces', { context });
 export const getPodLogs = (context: string, namespace: string, pod: string, container: string | null, previous: boolean, tail: number | null) =>
   invoke<string>('get_pod_logs', { context, namespace, pod, container, previous, tail });
+
+// Native save dialog → full (no --tail) pod logs written to disk. Returns the
+// saved path, or "cancelled" if the user dismissed the dialog.
+export const exportPodLogs = (context: string, namespace: string, pod: string, container: string | null, previous: boolean) =>
+  invoke<string>('export_pod_logs', { context, namespace, pod, container, previous });
 export const listHistory = (limit: number) => invoke<HistoryEntry[]>('list_history', { limit });
 export const searchHistory = (query: string, limit: number) => invoke<HistoryEntry[]>('search_history', { query, limit });
 

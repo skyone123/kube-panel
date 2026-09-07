@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getPodLogs, listContexts, streamPodLogs, stopLogStream, onLogChunk, type LogChunk } from '../api/tauri';
+import { getPodLogs, listContexts, streamPodLogs, stopLogStream, onLogChunk, exportPodLogs, type LogChunk } from '../api/tauri';
 import type { PodView } from '../types';
 import { useAppStore } from '../stores/appStore';
 
@@ -28,6 +28,8 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
   const [search, setSearch] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [currentMatch, setCurrentMatch] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState('');
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentLineRef = useRef<HTMLDivElement | null>(null);
@@ -196,17 +198,21 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     if (id) { try { void stopLogStream(id); } catch { /* noop */ } }
   };
 
-  const handleExport = () => {
-    if (lines.length === 0) return;
-    const blob = new Blob([lines.join('')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${pod?.name ?? 'logs'}.log`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    if (!pod || !ctxName || exporting) return;
+    setExporting(true);
+    setExportMsg('');
+    try {
+      // Full log dump via native save dialog (Rust side, no --tail).
+      const res = await exportPodLogs(ctxName, namespace, pod.name, container || null, previous);
+      if (res !== 'cancelled') {
+        setExportMsg(`Exported full logs → ${res}`);
+      }
+    } catch (e) {
+      setExportMsg(`Export failed: ${(e as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Split a single line into [text, <mark>, text, <mark>, …] segments.
@@ -333,9 +339,15 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
         <button className="lc-btn" onClick={() => setMaximized(m => !m)} title={maximized ? '退出全屏' : '全屏查看日志'}>
           {maximized ? '⤡ Restore' : '⤢ Fullscreen'}
         </button>
-        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0} title="导出当前缓冲区为 .log 文件">
-          Export
+        <button
+          className="lc-btn"
+          onClick={handleExport}
+          disabled={exporting || !ctxName}
+          title="导出该 pod 的完整日志（不受 tail 限制）为 .log 文件，可供本地工具搜索"
+        >
+          {exporting ? 'Exporting…' : 'Export'}
         </button>
+        {exportMsg && <span className="lc-export-msg">{exportMsg}</span>}
         {running && (
           <button className="lc-stop" onClick={handleStop} title="停止日志流并断开监听">Stop</button>
         )}

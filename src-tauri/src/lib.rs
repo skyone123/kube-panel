@@ -26,6 +26,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(runtime)
         .manage(history)
         .manage(StreamRegistry::new())
@@ -38,6 +39,7 @@ pub fn run() {
             commands::get_pods,
             commands::list_namespaces,
             commands::get_pod_logs,
+            commands::export_pod_logs,
             commands::list_history,
             commands::search_history,
             commands::stream_pod_logs,

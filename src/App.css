@@ -672,6 +672,14 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   align-items: center;
   gap: 8px;
 }
+.lc-export-msg {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .lc-btn {
   padding: 4px 10px;
   background: var(--bg);

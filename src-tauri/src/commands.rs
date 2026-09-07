@@ -71,6 +71,99 @@ pub async fn get_pod_logs(
     Ok(res.stdout)
 }
 
+/// Export a pod's FULL logs to a file chosen via the native save dialog.
+/// Re-runs `kubectl logs` WITHOUT `--tail` (all lines) streaming stdout
+/// straight to disk, so huge logs never sit in memory. Returns the saved path,
+/// or "cancelled" if the user dismissed the dialog. kubectl failures surface
+/// the stderr and the partial file is removed.
+#[tauri::command]
+pub async fn export_pod_logs(
+    app: AppHandle,
+    context: String,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+    previous: bool,
+    rt: State<'_, KubeRuntime>,
+    history: State<'_, History>,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use std::io::Write as _;
+    use tokio::io::AsyncReadExt;
+
+    let mut args: Vec<String> = vec!["logs".into(), pod.clone()];
+    if let Some(c) = &container {
+        args.push("-c".into());
+        args.push(c.clone());
+    }
+    if previous {
+        args.push("--previous".into());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+
+    // Native save dialog (async callback bridged over a one-shot channel).
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let suggested = if previous {
+        format!("{}-prev.log", pod)
+    } else {
+        format!("{}.log", pod)
+    };
+    app.dialog()
+        .file()
+        .set_file_name(&suggested)
+        .add_filter("Log files", &["log", "txt"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let Some(file_path) = rx.await.map_err(|e| format!("save dialog failed: {e}"))? else {
+        return Ok("cancelled".into());
+    };
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+
+    // Stream `kubectl logs` (full) stdout → file; bounded memory.
+    let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let mut stdout = child.stdout.take().ok_or("kubectl produced no stdout")?;
+    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = stdout.read(&mut buf).await.map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+    }
+    drop(stdout);
+
+    let exit = child.wait().await.map_err(|e| e.to_string())?;
+    if !exit.success() {
+        let _ = std::fs::remove_file(&path); // don't leave a partial file behind
+        let mut msg = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = stderr.read_to_string(&mut msg).await;
+        }
+        if msg.trim().is_empty() {
+            msg = format!("kubectl exited with code {}", exit.code().unwrap_or(-1));
+        }
+        return Err(msg);
+    }
+
+    // Record one history row (metadata-only) so the export is re-runnable.
+    let entry = crate::runtime::build_history_entry(
+        &context, ns_opt, &arg_refs,
+        exit.code(), 0, false,
+    );
+    if let Err(e) = history.insert(&entry) {
+        eprintln!("[kube-panel] history insert failed for export: {e}");
+    }
+
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn list_history(limit: i64, history: State<'_, History>) -> Result<Vec<HistoryEntry>, String> {
     history.list(limit).map_err(|e| e.to_string())

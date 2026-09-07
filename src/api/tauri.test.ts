@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData, exportPodLogs } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -96,5 +96,12 @@ describe('api wrappers', () => {
     const r = await getSecretData('dev', 'default', 'db');
     expect(invoke).toHaveBeenCalledWith('get_secret', { context: 'dev', namespace: 'default', name: 'db' });
     expect(r.name).toBe('db');
+  });
+
+  it('exportPodLogs passes context + namespace + pod + container + previous', async () => {
+    (invoke as any).mockResolvedValue('C:/logs/nginx.log');
+    const r = await exportPodLogs('dev', 'default', 'nginx', null, true);
+    expect(invoke).toHaveBeenCalledWith('export_pod_logs', { context: 'dev', namespace: 'default', pod: 'nginx', container: null, previous: true });
+    expect(r).toBe('C:/logs/nginx.log');
   });
 });
