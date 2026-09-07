@@ -42,6 +42,14 @@ impl Kubectl {
             cmd.arg("-n").arg(ns);
         }
         cmd.args(args);
+        #[cfg(windows)]
+        {
+            // Spawn console children (kubectl.exe) without creating a new
+            // console window. The packaged app is a GUI exe with no console,
+            // so without CREATE_NO_WINDOW every kubectl call flashes a black
+            // terminal box (auto-refresh every 5s makes it a constant rain).
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
         cmd
     }
 
