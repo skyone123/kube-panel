@@ -36,7 +36,7 @@ pub async fn get_pods(context: String, namespace: String, rt: State<'_, KubeRunt
     } else {
         &["get", "pods", "-o", "json"]
     };
-    let res = rt.run(&context, if namespace.is_empty() { None } else { Some(&namespace) }, args).await
+    let res = rt.run_no_history(&context, if namespace.is_empty() { None } else { Some(&namespace) }, args).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 {
         return Err(res.stderr);
@@ -46,7 +46,7 @@ pub async fn get_pods(context: String, namespace: String, rt: State<'_, KubeRunt
 
 #[tauri::command]
 pub async fn list_namespaces(context: String, rt: State<'_, KubeRuntime>) -> Result<Vec<String>, String> {
-    let res = rt.run(&context, None, &["get", "ns", "-o", "json"]).await
+    let res = rt.run_no_history(&context, None, &["get", "ns", "-o", "json"]).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_namespace_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
@@ -316,7 +316,7 @@ pub async fn get_events(
         &["get", "events", "-o", "json"]
     };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_event_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
@@ -332,7 +332,7 @@ pub async fn get_configmaps(
         &["get", "cm", "-o", "json"]
     };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_configmap_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
@@ -343,7 +343,7 @@ pub async fn get_pod_configmaps(
     rt: State<'_, KubeRuntime>,
 ) -> Result<Vec<String>, String> {
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, &["get", "pod", &pod, "-o", "json"]).await
+    let res = rt.run_no_history(&context, ns_opt, &["get", "pod", &pod, "-o", "json"]).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_pod_configmap_refs(res.stdout.as_bytes()).map_err(|e| e.to_string())
@@ -355,7 +355,7 @@ pub async fn get_configmap(
     rt: State<'_, KubeRuntime>,
 ) -> Result<crate::models::ConfigMapDataView, String> {
     let ns_arg = if namespace.is_empty() { None } else { Some(&namespace[..]) };
-    let res = rt.run(&context, ns_arg, &["get", "cm", &name, "-o", "json"]).await
+    let res = rt.run_no_history(&context, ns_arg, &["get", "cm", &name, "-o", "json"]).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_configmap_data(res.stdout.as_bytes()).map_err(|e| e.to_string())
@@ -372,7 +372,7 @@ pub async fn get_secrets(
         &["get", "secret", "-o", "json"]
     };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_secret_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
@@ -383,7 +383,7 @@ pub async fn get_secret(
     rt: State<'_, KubeRuntime>,
 ) -> Result<crate::models::SecretDataView, String> {
     let ns_arg = if namespace.is_empty() { None } else { Some(&namespace[..]) };
-    let res = rt.run(&context, ns_arg, &["get", "secret", &name, "-o", "json"]).await
+    let res = rt.run_no_history(&context, ns_arg, &["get", "secret", &name, "-o", "json"]).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_secret_data(res.stdout.as_bytes()).map_err(|e| e.to_string())
@@ -400,7 +400,7 @@ pub async fn get_deployments(
         &["get", "deploy", "-o", "json"]
     };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_deployment_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
@@ -456,7 +456,7 @@ pub async fn get_rollout_revisions(
         &["get", "rs", "-o", "json"]
     };
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_rollout_revisions(res.stdout.as_bytes(), &name).map_err(|e| e.to_string())
 }
@@ -538,7 +538,7 @@ pub fn clear_port_forward(id: String, registry: State<'_, PfRegistry>) -> Result
 #[tauri::command]
 pub async fn get_nodes(context: String, rt: State<'_, KubeRuntime>) -> Result<Vec<crate::models::NodeView>, String> {
     // Nodes are cluster-scoped: ns_opt=None, NO --all-namespaces
-    let res = rt.run(&context, None, &["get", "nodes", "-o", "json"]).await
+    let res = rt.run_no_history(&context, None, &["get", "nodes", "-o", "json"]).await
         .map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_node_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
@@ -615,7 +615,7 @@ pub async fn get_resources(
     args.push("-o".into()); args.push("json".into());
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
-    let res = rt.run(&context, ns_opt, &arg_refs).await.map_err(|e| e.to_string())?;
+    let res = rt.run_no_history(&context, ns_opt, &arg_refs).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     crate::models::parse_resources(res.stdout.as_bytes(), &kind).map_err(|e| e.to_string())
 }

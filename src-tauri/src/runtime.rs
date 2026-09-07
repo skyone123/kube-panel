@@ -28,17 +28,31 @@ impl KubeRuntime {
     }
 
     pub async fn run(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> std::io::Result<RunResult> {
+        self.run_inner(context, namespace, args, true).await
+    }
+
+    /// Like `run` but does NOT record a history row. Used by high-frequency,
+    /// read-only list/poll queries (5s auto-refresh) where every call would
+    /// otherwise flood `history.db` — and the history panel — with `get pods`-
+    /// style noise that nobody re-runs.
+    pub async fn run_no_history(&self, context: &str, namespace: Option<&str>, args: &[&str]) -> std::io::Result<RunResult> {
+        self.run_inner(context, namespace, args, false).await
+    }
+
+    async fn run_inner(&self, context: &str, namespace: Option<&str>, args: &[&str], record_history: bool) -> std::io::Result<RunResult> {
         let start = Instant::now();
         let res = self.kubectl.run(context, namespace, args).await;
-        let duration_ms = start.elapsed().as_millis() as i64;
-        let exit_code = match &res {
-            Ok(r) => Some(r.exit_code),
-            Err(_) => None,
-        };
-        let entry = build_history_entry(context, namespace, args, exit_code, duration_ms, false);
-        // history write must not mask the original result
-        if let Err(e) = self.history.insert(&entry) {
-            eprintln!("[kube-panel] history insert failed: {e}");
+        if record_history {
+            let duration_ms = start.elapsed().as_millis() as i64;
+            let exit_code = match &res {
+                Ok(r) => Some(r.exit_code),
+                Err(_) => None,
+            };
+            let entry = build_history_entry(context, namespace, args, exit_code, duration_ms, false);
+            // history write must not mask the original result
+            if let Err(e) = self.history.insert(&entry) {
+                eprintln!("[kube-panel] history insert failed: {e}");
+            }
         }
         res
     }
@@ -181,6 +195,29 @@ mod tests {
         assert_eq!(rows[0].exit_code, None, "exit_code should be None on spawn error");
         assert_eq!(rows[0].is_stream, false);
 
+        std::fs::remove_file(&hist_path).ok();
+    }
+
+    /// (d) run_no_history must NOT write a history row — used by 5s auto-refresh
+    /// list queries so `history.db` and the panel aren't flooded with `get pods`.
+    #[tokio::test]
+    async fn run_no_history_skips_history() {
+        let script = write_fake_kubectl("nohist", &["echo hi"]);
+        let hist_path = tmp_db("nohist");
+        let history = History::open(&hist_path).unwrap();
+        let rt = KubeRuntime::new(
+            Kubectl::with_binary(script.to_string_lossy().into_owned()),
+            history,
+        );
+
+        let res = rt.run_no_history("dev", Some("default"), &["get", "pods"]).await.unwrap();
+        assert_eq!(res.exit_code, 0);
+        assert!(res.stdout.contains("hi"), "stdout should contain hi, got: {}", res.stdout);
+
+        let rows = rt.history_list();
+        assert_eq!(rows.len(), 0, "run_no_history must not write a history row");
+
+        std::fs::remove_file(&script).ok();
         std::fs::remove_file(&hist_path).ok();
     }
 }

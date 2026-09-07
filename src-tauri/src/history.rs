@@ -21,6 +21,10 @@ pub struct History {
     conn: Arc<Mutex<Connection>>,
 }
 
+/// Cap on retained history rows; the PRUNING in `insert` keeps the newest this
+/// many rows so `history.db` can't grow without bound.
+const MAX_HISTORY_ROWS: usize = 5000;
+
 impl History {
     pub fn open(path: &Path) -> std::io::Result<Self> {
         if let Some(dir) = path.parent() {
@@ -65,7 +69,16 @@ impl History {
                 e.exit_code, e.duration_ms, e.is_stream as i64, e.favorite as i64,
             ],
         ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        Ok(conn.last_insert_rowid())
+        let row_id = conn.last_insert_rowid();
+        // Prune to keep the newest MAX_HISTORY_ROWS rows. LIMIT -1 OFFSET N
+        // selects every row after the newest N; deleting them bounds the file
+        // size even without auto-refresh noise. No-op while under the cap.
+        let prune = "DELETE FROM command_history WHERE id IN (
+            SELECT id FROM command_history ORDER BY id DESC LIMIT -1 OFFSET ?1
+        )";
+        conn.execute(prune, params![MAX_HISTORY_ROWS as i64])
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(row_id)
     }
 
     fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
@@ -160,6 +173,28 @@ mod tests {
         assert_eq!(r.len(), 1);
         let r2 = h.search("nothinglike", 10).unwrap();
         assert!(r2.is_empty());
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn insert_prunes_beyond_cap() {
+        let path = tmp_db();
+        let h = History::open(&path).unwrap();
+        let cap = MAX_HISTORY_ROWS as i64;
+        // insert cap + 100 entries (ts_ms ascending 0 .. cap+100)
+        for i in 0..(cap + 100) {
+            h.insert(&HistoryEntry {
+                id: None, ts_ms: i, context: "dev".into(), namespace: None,
+                argv: vec!["get".into(), format!("r{}", i)], exit_code: Some(0),
+                duration_ms: Some(1), is_stream: false, favorite: false,
+            }).unwrap();
+        }
+        let rows = h.list(cap + 10_000).unwrap();
+        assert_eq!(rows.len() as i64, cap, "must keep exactly MAX_HISTORY_ROWS rows");
+        // newest first → the row with the largest ts_ms (cap+99) survives
+        assert_eq!(rows[0].ts_ms, cap + 99);
+        // oldest surviving row is the 100th inserted (ts 100..cap+99 kept)
+        assert_eq!(rows.last().unwrap().ts_ms, 100);
         std::fs::remove_file(path).ok();
     }
 }
