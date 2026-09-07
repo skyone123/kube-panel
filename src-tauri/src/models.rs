@@ -160,6 +160,54 @@ pub fn parse_configmap_data(json: &[u8]) -> std::io::Result<ConfigMapDataView> {
 }
 
 // ---------------------------------------------------------------------------
+// Secret parser
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecretList { pub items: Vec<SecretItem> }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecretItem {
+    pub metadata: ConfigMapMeta,
+    #[serde(default, rename = "type")] pub secret_type: String,
+    #[serde(default)] pub data: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SecretView { pub name: String, pub secret_type: String, pub keys: Vec<String> }
+
+/// Per-key secret value. `value` is the RAW base64 string as served by
+/// `kubectl get secret -o json` — decoding happens client-side on demand so
+/// plaintext never crosses IPC until the user explicitly reveals a key.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SecretEntry { pub key: String, pub value: String }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SecretDataView { pub name: String, pub secret_type: String, pub entries: Vec<SecretEntry> }
+
+pub fn parse_secret_list(json: &[u8]) -> std::io::Result<Vec<SecretView>> {
+    let list: SecretList = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(list.items.into_iter().map(|s| SecretView {
+        name: s.metadata.name,
+        secret_type: s.secret_type,
+        keys: s.data.keys().cloned().collect(),
+    }).collect())
+}
+
+/// Parse single-Secret JSON (`kubectl get secret <name> -o json`):
+/// `{ metadata:{name}, type:"Opaque", data:{k:<base64>} }`. `data` absent →
+/// empty entries. BTreeMap iterates sorted by key → stable order.
+pub fn parse_secret_data(json: &[u8]) -> std::io::Result<SecretDataView> {
+    let s: SecretItem = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let entries = s.data.into_iter()
+        .map(|(k, v)| SecretEntry { key: k, value: v })
+        .collect();
+    Ok(SecretDataView { name: s.metadata.name, secret_type: s.secret_type, entries })
+}
+
+// ---------------------------------------------------------------------------
 // Event parser
 // ---------------------------------------------------------------------------
 
@@ -969,6 +1017,51 @@ mod tests {
         }"#;
         let view = parse_configmap_data(json).unwrap();
         assert_eq!(view.name, "empty-cm");
+        assert!(view.entries.is_empty());
+    }
+
+    #[test]
+    fn parses_secret_list_names_types_keys() {
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"db-secret"},"type":"Opaque","data":{"PASSWORD":"c2VjcmV0","URL":"aHR0cHM6Ly94"}},
+                {"metadata":{"name":"tls-secret"},"type":"kubernetes.io/tls"}
+            ]
+        }"#;
+        let views = parse_secret_list(json).unwrap();
+        assert_eq!(views.len(), 2);
+        let db = views.iter().find(|v| v.name == "db-secret").unwrap();
+        assert_eq!(db.secret_type, "Opaque");
+        assert_eq!(db.keys, vec!["PASSWORD", "URL"]);
+        let tls = views.iter().find(|v| v.name == "tls-secret").unwrap();
+        assert_eq!(tls.secret_type, "kubernetes.io/tls");
+        assert!(tls.keys.is_empty());
+    }
+
+    #[test]
+    fn parses_secret_data_keeps_base64_raw_sorted() {
+        let json = br#"{
+            "metadata": {"name": "db-secret"},
+            "type": "kubernetes.io/dockerconfigjson",
+            "data": {"Z": "em0=", "A": "YWJjCg=="}
+        }"#;
+        let view = parse_secret_data(json).unwrap();
+        assert_eq!(view.name, "db-secret");
+        assert_eq!(view.secret_type, "kubernetes.io/dockerconfigjson");
+        assert_eq!(view.entries.len(), 2);
+        // BTreeMap sorts by key → A before Z
+        assert_eq!(view.entries[0].key, "A");
+        assert_eq!(view.entries[0].value, "YWJjCg==", "value must be the RAW base64, not decoded");
+        assert_eq!(view.entries[1].key, "Z");
+        assert_eq!(view.entries[1].value, "em0=");
+    }
+
+    #[test]
+    fn parses_secret_data_no_data_field_empty_entries() {
+        let json = br#"{"metadata":{"name":"empty-secret"},"type":"Opaque"}"#;
+        let view = parse_secret_data(json).unwrap();
+        assert_eq!(view.name, "empty-secret");
+        assert_eq!(view.secret_type, "Opaque");
         assert!(view.entries.is_empty());
     }
 

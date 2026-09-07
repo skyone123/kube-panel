@@ -9,10 +9,14 @@ export type ConfigMapView = { name: string; keys: string[] };
 export type ConfigMapEntry = { key: string; value: string };
 export type ConfigMapDataView = { name: string; entries: ConfigMapEntry[] };
 
+export type SecretView = { name: string; secret_type: string; keys: string[] };
+export type SecretEntry = { key: string; value: string };
+export type SecretDataView = { name: string; secret_type: string; entries: SecretEntry[] };
+
 export type EventView = { last_timestamp: string; type_: string; reason: string; message: string; involved_name: string };
 export type EventChunk = { id: string; event: EventView };
 
-export type PodActionMode = 'images' | 'configmaps' | 'describe' | 'events' | 'yaml' | 'exec';
+export type PodActionMode = 'images' | 'configmaps' | 'secrets' | 'describe' | 'events' | 'yaml' | 'exec';
 
 export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history';
 

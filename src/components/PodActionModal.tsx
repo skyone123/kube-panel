@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk } from '../api/tauri';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, getSecrets, getSecretData } from '../api/tauri';
 import { HighlightText } from './HighlightText';
 
 interface PodActionModalProps {
@@ -14,6 +14,7 @@ function modeTitle(mode: PodActionMode): string {
   switch (mode) {
     case 'images': return 'Images';
     case 'configmaps': return 'ConfigMaps';
+    case 'secrets': return 'Secrets';
     case 'describe': return 'Describe';
     case 'events': return 'Events';
     case 'yaml': return 'YAML';
@@ -201,6 +202,147 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
           </>
         ) : (
           <div className="pod-modal-empty">Select a ConfigMap to view its data.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/// Decode a base64 Secret value into UTF-8 text. Falls back to the raw input if
+/// the value isn't valid base64. Secret values are small config blobs, so this
+/// is synchronous and cheap.
+function decodeSecretValue(b64: string): string {
+  try {
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return b64;
+  }
+}
+
+type RevealState = 'hidden' | 'confirm' | 'revealed';
+
+function SecretsPanel({ ctxName, namespace }: { ctxName: string; namespace: string }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [revealState, setRevealState] = useState<Record<string, RevealState>>({});
+
+  const secretsQuery = useQuery({
+    queryKey: ['secrets', ctxName, namespace],
+    queryFn: () => getSecrets(ctxName, namespace),
+    enabled: !!ctxName,
+  });
+
+  const dataQuery = useQuery({
+    queryKey: ['secret-data', ctxName, namespace, selected],
+    queryFn: () => getSecretData(ctxName, namespace, selected!),
+    enabled: !!selected,
+  });
+
+  const secrets = secretsQuery.data ?? [];
+  const current = secrets.find(s => s.name === selected) ?? null;
+  const entries = dataQuery.data?.entries ?? [];
+
+  const selectSecret = (name: string) => {
+    setSelected(name);
+    setRevealState({}); // never reveal keys from a previously-viewed secret
+  };
+
+  const toggleReveal = (key: string) => {
+    const st = revealState[key] ?? 'hidden';
+    if (st === 'hidden') setRevealState(prev => ({ ...prev, [key]: 'confirm' }));
+    else if (st === 'confirm') setRevealState(prev => ({ ...prev, [key]: 'revealed' }));
+    else setRevealState(prev => ({ ...prev, [key]: 'hidden' }));
+  };
+
+  if (secretsQuery.isLoading) {
+    return <div className="pod-modal-loading">Loading Secrets…</div>;
+  }
+  if (secretsQuery.error) {
+    return <div className="pod-modal-error">Error: {(secretsQuery.error as Error).message}</div>;
+  }
+  if (secrets.length === 0) {
+    return <div className="pod-modal-empty">No Secrets in this namespace.</div>;
+  }
+
+  return (
+    <div className="cm-split">
+      <div className="cm-list">
+        <div className="cm-list-head">Secrets ({secrets.length})</div>
+        {secrets.map(s => (
+          <button
+            key={s.name}
+            className={`cm-item${s.name === selected ? ' active' : ''}`}
+            onClick={() => selectSecret(s.name)}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+      <div className="cm-detail">
+        {current ? (
+          <>
+            <div className="cm-detail-head">
+              <span>{current.name}</span>
+              <span className="cm-detail-head-meta">({current.secret_type})</span>
+            </div>
+            {dataQuery.isLoading ? (
+              <div className="pod-modal-loading">Loading Secret data…</div>
+            ) : dataQuery.error ? (
+              <div className="pod-modal-error">Error: {(dataQuery.error as Error).message}</div>
+            ) : entries.length === 0 ? (
+              <div className="pod-modal-empty">No keys.</div>
+            ) : (
+              entries.map(e => {
+                const st = revealState[e.key] ?? 'hidden';
+                const revealed = st === 'revealed';
+                const plain = revealed ? decodeSecretValue(e.value) : '';
+                return (
+                  <div key={e.key} className="cm-key-val">
+                    <div className="cm-key-row">
+                      <span className="cm-key">{e.key}</span>
+                      <span className="cm-key-actions">
+                        <button
+                          className={`ctx-item${st === 'confirm' ? ' sec-confirm' : ''}`}
+                          onClick={() => toggleReveal(e.key)}
+                          title={
+                            st === 'confirm'
+                              ? '再次点击确认显示明文'
+                              : revealed
+                                ? '点击重新隐藏该值'
+                                : '揭秘该值（需二次确认）'
+                          }
+                        >
+                          {st === 'confirm' ? 'Confirm reveal' : revealed ? 'Hide' : 'Reveal'}
+                        </button>
+                        {revealed && (
+                          <button
+                            className="ctx-item"
+                            onClick={() => navigator.clipboard.writeText(plain)}
+                            title="复制明文值到剪贴板"
+                          >
+                            Copy value
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                    {st === 'confirm' && (
+                      <div className="sec-confirm-hint">
+                        ⚠ 再次点击「Confirm reveal」将显示该 Secret 的明文值
+                      </div>
+                    )}
+                    <pre className={`cm-val cm-val-scroll${revealed ? ' sec-revealed' : ''}`}>
+                      {revealed ? plain : '••••••••••••••••••••••••••••••••'}
+                    </pre>
+                  </div>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <div className="pod-modal-empty">
+            Select a Secret to view its keys (values stay masked until you reveal them).
+          </div>
         )}
       </div>
     </div>
@@ -477,6 +619,7 @@ export function PodActionModal({ pod, mode, onClose }: PodActionModalProps) {
         <div className="pod-modal-body">
           {mode === 'images' && <ImagesPanel pod={pod} />}
           {mode === 'configmaps' && <ConfigmapsPanel pod={pod} ctxName={ctxName} />}
+          {mode === 'secrets' && <SecretsPanel ctxName={ctxName} namespace={pod.namespace} />}
           {mode === 'describe' && <DescribePanel pod={pod} ctxName={ctxName} />}
           {mode === 'events' && <EventsPanel pod={pod} ctxName={ctxName} />}
           {mode === 'yaml' && <YamlPanel pod={pod} ctxName={ctxName} />}

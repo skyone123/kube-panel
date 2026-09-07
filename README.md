@@ -44,6 +44,7 @@ in one desktop app.
 | 🚀 **Deployments & rollout** | Deployments tab + right-click **restart / scale / undo / history**, each behind a confirm modal showing the exact command. |
 | 🔌 **Port-forward manager** | Live session table (running / stopped / failed), confirm-before-start, stop/clear, children reaped on app exit. |
 | 🗂️ **Resource browser** | Services / Ingresses / PVC / StatefulSets / DaemonSets / Jobs / CronJobs — one kind-aware table with dynamic columns, substring filter, right-click describe. |
+| 🔐 **Secrets** | Namespace-wide Secret list + per-key viewer. Values stay **masked** (base64 is only decoded client-side after a two-step confirm), so plaintext never crosses IPC until you intentionally reveal it — and history still records metadata only. |
 | 💻 **Exec terminal** | Right-click a pod → `kubectl exec -it` in an interactive xterm.js terminal (ConPTY). Container + command picker (default `sh`), resize-aware. |
 | 🧱 **Command history** | Searchable, persisted to SQLite. **Metadata-only** — no stdout/stderr ever touches disk (kubectl output often carries secrets). |
 | 💬 **Chinese hints** | Every key control shows a concise Chinese tooltip on hover; safety-relevant controls note their non-destructive / gated nature. |
@@ -56,6 +57,8 @@ in one desktop app.
 - **Show ConfigMaps** — the ConfigMaps this pod references (`envFrom` /
   `env.valueFrom.configMapKeyRef` / `volumes`), with on-demand key/value
   viewing, copy, and export
+- **Show Secrets** — the namespace's Secrets with a masked per-key viewer
+  (base64 only decoded after a two-step reveal confirmation)
 - **Describe** — `kubectl describe pod` text, CrashLoop/OOM keyword highlighting
 - **Events** — structured table (time / type / reason / message), filterable
   to the pod or the whole namespace
@@ -178,8 +181,11 @@ kube-panel/
   never touches `~/.kube-panel/history.db`.
 - ✅ **kubeconfig is parsed, not logged** — only context/cluster/user **names**
   cross IPC; tokens, certs, and exec configs are dropped by serde.
-- ⚠️ **Tauri CSP** is currently `null` (dev default) — pin a restrictive CSP
-  before a stable release. Tracked as a TODO.
+- ✅ **Secret values are masked by default** — raw base64 crosses IPC, plaintext
+  is only decoded in the renderer after a two-step confirm. No secret value is
+  ever written to history.
+- ✅ **Restrictive Tauri CSP** (`default-src 'self'`, only `ipc:` + localhost for
+  dev HMR; `object-src 'none'`, `base-uri 'self'`, `form-action 'none'`).
 
 See the design doc for the full security rationale (§6.4).
 
@@ -202,13 +208,14 @@ See the design doc for the full security rationale (§6.4).
 - [x] **Resource browser** (svc / ingress / pvc / statefulset / daemonset / job / cronjob)
 - [x] **Exec terminal** (ConPTY + xterm.js, interactive `kubectl exec -it`)
 - [x] **Chinese tooltip hints** on UI controls (~66 native `title` tooltips)
+- [x] **Secret viewer** (masked by default, two-step reveal, per-key)
+- [x] **Restrictive Tauri CSP**
 
 **Planned / deferred**
 - [ ] YAML apply (dry-run preview → confirm → apply)
 - [ ] Cluster health badge (`get --raw /healthz` + `auth can-i`)
 - [ ] Favorites / command snippets
 - [ ] Anomaly-highlight polish (restart-spike detection, OOMKilled icon)
-- [ ] Restrictive Tauri CSP
 
 Full spec: [`docs/specs/2026-09-03-kube-panel-design.md`](docs/specs/2026-09-03-kube-panel-design.md)
 

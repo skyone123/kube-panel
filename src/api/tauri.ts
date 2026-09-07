@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView, ResourceListView, ResourceKind } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView, ResourceListView, ResourceKind, SecretView, SecretDataView } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -25,6 +25,11 @@ export const getPodConfigmaps = (context: string, namespace: string, pod: string
   invoke<string[]>('get_pod_configmaps', { context, namespace, pod });
 export const getConfigmap = (context: string, namespace: string, name: string) =>
   invoke<ConfigMapDataView>('get_configmap', { context, namespace, name });
+
+export const getSecrets = (context: string, namespace: string) =>
+  invoke<SecretView[]>('get_secrets', { context, namespace });
+export const getSecretData = (context: string, namespace: string, name: string) =>
+  invoke<SecretDataView>('get_secret', { context, namespace, name });
 
 export type LogChunk = { id: string; text: string };
 

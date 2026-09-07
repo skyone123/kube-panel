@@ -1143,6 +1143,28 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   display: flex;
   gap: 4px;
 }
+.cm-detail-head-meta {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.sec-confirm {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.5) !important;
+}
+.sec-confirm:hover {
+  background: rgba(255, 107, 107, 0.12);
+}
+.sec-confirm-hint {
+  padding: 4px 14px 0;
+  font-size: 11px;
+  color: var(--status-warn);
+}
+.sec-revealed {
+  color: var(--text);
+  background: rgba(120, 200, 80, 0.06);
+}
 
 /* Describe output */
 .describe-output {

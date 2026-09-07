@@ -212,6 +212,9 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           <button className="ctx-item" onClick={() => fireAction('configmaps')} title="查看该 pod 引用的 ConfigMap 键值">
             Show ConfigMaps
           </button>
+          <button className="ctx-item" onClick={() => fireAction('secrets')} title="查看该命名空间内的 Secret 键值（值默认打码，可主动揭秘）">
+            Show Secrets
+          </button>
           <button className="ctx-item" onClick={() => fireAction('yaml')} title="查看该 pod 的 YAML（只读）">
             View YAML
           </button>

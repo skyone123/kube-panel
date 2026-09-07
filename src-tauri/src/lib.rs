@@ -50,6 +50,8 @@ pub fn run() {
             commands::get_configmaps,
             commands::get_pod_configmaps,
             commands::get_configmap,
+            commands::get_secrets,
+            commands::get_secret,
             commands::get_deployments,
             commands::rollout_restart,
             commands::rollout_scale,

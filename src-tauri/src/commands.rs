@@ -362,6 +362,34 @@ pub async fn get_configmap(
 }
 
 #[tauri::command]
+pub async fn get_secrets(
+    context: String, namespace: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<crate::models::SecretView>, String> {
+    let args: &[&str] = if namespace.is_empty() {
+        &["get", "secret", "--all-namespaces", "-o", "json"]
+    } else {
+        &["get", "secret", "-o", "json"]
+    };
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, args).await.map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_secret_list(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_secret(
+    context: String, namespace: String, name: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<crate::models::SecretDataView, String> {
+    let ns_arg = if namespace.is_empty() { None } else { Some(&namespace[..]) };
+    let res = rt.run(&context, ns_arg, &["get", "secret", &name, "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_secret_data(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_deployments(
     context: String, namespace: String,
     rt: State<'_, KubeRuntime>,
