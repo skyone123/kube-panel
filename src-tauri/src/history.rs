@@ -26,12 +26,31 @@ pub struct History {
 const MAX_HISTORY_ROWS: usize = 5000;
 
 impl History {
-    pub fn open(path: &Path) -> std::io::Result<Self> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+    /// Open (or create) the history DB. On ANY failure the app degrades
+    /// gracefully to an in-memory DB instead of crashing — history just won't
+    /// persist across restarts. Callers should never unwrap/expect this.
+    pub fn open(path: Option<&Path>) -> std::io::Result<Self> {
+        let conn = Self::open_conn(path);
+        Self::init_schema(&conn)
+            .map(|_| History { conn: Arc::new(Mutex::new(conn)) })
+    }
+
+    fn open_conn(path: Option<&Path>) -> Connection {
+        if let Some(p) = path {
+            if std::fs::create_dir_all(p.parent().unwrap_or(Path::new("."))).is_ok() {
+                if let Ok(c) = Connection::open(p) {
+                    return c;
+                }
+                eprintln!("[kube-panel] history.db open failed, falling back to in-memory db");
+            } else {
+                eprintln!("[kube-panel] cannot create history dir, falling back to in-memory db");
+            }
         }
-        let conn = Connection::open(path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        #[allow(clippy::unwrap_used)]
+        Connection::open_in_memory().expect("in-memory sqlite open cannot fail")
+    }
+
+    fn init_schema(conn: &Connection) -> std::io::Result<()> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS command_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,8 +65,7 @@ impl History {
             );
             CREATE INDEX IF NOT EXISTS idx_history_ts ON command_history(ts DESC);
             CREATE INDEX IF NOT EXISTS idx_history_context ON command_history(context);"
-        ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        Ok(History { conn: Arc::new(Mutex::new(conn)) })
+        ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
 
     pub fn default_path() -> std::path::PathBuf {
@@ -115,12 +133,15 @@ impl History {
     }
 
     pub fn search(&self, q: &str, limit: i64) -> std::io::Result<Vec<HistoryEntry>> {
-        let like = format!("%{}%", q);
+        // Escape LIKE wildcards so a literal "%"/"_" in the query doesn't
+        // silently match the whole table.
+        let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let like = format!("%{}%", escaped);
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, ts, context, namespace, argv_json, exit_code, duration_ms, is_stream, favorite
              FROM command_history
-             WHERE argv_json LIKE ?1 OR context LIKE ?1 OR namespace LIKE ?1
+             WHERE argv_json LIKE ?1 ESCAPE '\\' OR context LIKE ?1 ESCAPE '\\' OR namespace LIKE ?1 ESCAPE '\\'
              ORDER BY ts DESC LIMIT ?2"
         ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let rows = stmt.query_map(params![like, limit], Self::row_to_entry)
@@ -146,7 +167,7 @@ mod tests {
     #[test]
     fn insert_then_list_roundtrip() {
         let path = tmp_db();
-        let h = History::open(&path).unwrap();
+        let h = History::open(Some(&path)).unwrap();
         let id = h.insert(&HistoryEntry {
             id: None, ts_ms: 1000, context: "dev".into(), namespace: Some("default".into()),
             argv: vec!["get".into(), "pods".into()], exit_code: Some(0),
@@ -163,7 +184,7 @@ mod tests {
     #[test]
     fn search_matches_argv() {
         let path = tmp_db();
-        let h = History::open(&path).unwrap();
+        let h = History::open(Some(&path)).unwrap();
         h.insert(&HistoryEntry {
             id: None, ts_ms: 1, context: "prod".into(), namespace: None,
             argv: vec!["logs".into(), "nginx".into()], exit_code: Some(0),
@@ -179,7 +200,7 @@ mod tests {
     #[test]
     fn insert_prunes_beyond_cap() {
         let path = tmp_db();
-        let h = History::open(&path).unwrap();
+        let h = History::open(Some(&path)).unwrap();
         let cap = MAX_HISTORY_ROWS as i64;
         // insert cap + 100 entries (ts_ms ascending 0 .. cap+100)
         for i in 0..(cap + 100) {

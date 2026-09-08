@@ -20,8 +20,16 @@ use stream::StreamRegistry;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let kubectl = Kubectl::from_env();
-    let history = History::open(&History::default_path())
-        .expect("failed to open history db");
+    // History degrades to an in-memory DB if the on-disk one can't be opened;
+    // it never panics.
+    let history = History::open(Some(&History::default_path()))
+        .unwrap_or_else(|e| {
+            eprintln!("[kube-panel] history init failed: {e}");
+            History::open(None).unwrap_or_else(|le| {
+                eprintln!("[kube-panel] in-memory history fallback failed (unrecoverable): {le}");
+                std::process::exit(1);
+            })
+        });
     let runtime = KubeRuntime::new(kubectl, history.clone());
 
     let app = tauri::Builder::default()

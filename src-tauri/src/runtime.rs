@@ -73,12 +73,61 @@ pub fn build_history_entry(
         ts_ms,
         context: context.to_string(),
         namespace: namespace.map(|s| s.to_string()),
-        argv: args.iter().map(|s| s.to_string()).collect(),
+        argv: sanitize_argv(args),
         exit_code,
         duration_ms: Some(duration_ms),
         is_stream,
         favorite: false,
     }
+}
+
+/// Redact secrets that would otherwise be persisted verbatim into history.db.
+/// Values following a known credential flag (as the next arg like `--token x`,
+/// as `--flag=value`, or a kubeconfig-snippet) are replaced with `***`.
+/// Conservative: only well-known secret-ish flags are matched so we don't
+/// accidentally mangle ordinary args (pod names, ports, numbers…).
+const SECRET_FLAGS: &[&str] = &["--password", "--token", "--client-secret", "--from-literal", "--secret"];
+
+fn sanitize_argv(args: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i];
+        // "inject" the value into the current output position
+        let mut emit = |value: &str| out.push(value.to_string());
+        if a == "--from-literal" {
+            // kubectl create secret generic --from-literal=KEY=value : redact whole literal
+            if args.len() > i + 1 {
+                emit("--from-literal=***");
+                i += 2;
+            } else {
+                emit(a);
+                i += 1;
+            }
+            continue;
+        }
+        if SECRET_FLAGS.contains(&a) {
+            out.push(a.to_string());
+            if args.len() > i + 1 {
+                out.push("***".into());
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        // --token=abc / --password=xyz (inline form)
+        if let Some((k, _)) = a.split_once('=') {
+            if SECRET_FLAGS.contains(&k) {
+                emit(&format!("{k}=***"));
+                i += 1;
+                continue;
+            }
+        }
+        emit(a);
+        i += 1;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -121,7 +170,7 @@ mod tests {
     async fn run_inserts_history_on_success() {
         let script = write_fake_kubectl("ok", &["echo hello"]);
         let hist_path = tmp_db("ok");
-        let history = History::open(&hist_path).unwrap();
+        let history = History::open(Some(&hist_path)).unwrap();
         let rt = KubeRuntime::new(
             Kubectl::with_binary(script.to_string_lossy().into_owned()),
             history,
@@ -149,7 +198,7 @@ mod tests {
     async fn run_inserts_history_on_nonzero_exit() {
         let script = write_fake_kubectl("fail", &["echo boom", "exit /b 7"]);
         let hist_path = tmp_db("fail");
-        let history = History::open(&hist_path).unwrap();
+        let history = History::open(Some(&hist_path)).unwrap();
         let rt = KubeRuntime::new(
             Kubectl::with_binary(script.to_string_lossy().into_owned()),
             history,
@@ -178,7 +227,7 @@ mod tests {
     async fn run_inserts_history_on_spawn_error() {
         let bogus = PathBuf::from("C:/nonexistent/kp-no-such-binary-xyz.exe");
         let hist_path = tmp_db("spawn");
-        let history = History::open(&hist_path).unwrap();
+        let history = History::open(Some(&hist_path)).unwrap();
         let rt = KubeRuntime::new(
             Kubectl::with_binary(bogus.to_string_lossy().into_owned()),
             history,
@@ -204,7 +253,7 @@ mod tests {
     async fn run_no_history_skips_history() {
         let script = write_fake_kubectl("nohist", &["echo hi"]);
         let hist_path = tmp_db("nohist");
-        let history = History::open(&hist_path).unwrap();
+        let history = History::open(Some(&hist_path)).unwrap();
         let rt = KubeRuntime::new(
             Kubectl::with_binary(script.to_string_lossy().into_owned()),
             history,
@@ -219,5 +268,34 @@ mod tests {
 
         std::fs::remove_file(&script).ok();
         std::fs::remove_file(&hist_path).ok();
+    }
+
+    /// (e) verifies creds in recorded argv never land in history verbatim.
+    #[test]
+    fn sanitize_argv_redacts_credentials() {
+        // Inline --flag=value forms
+        assert_eq!(
+            sanitize_argv(&["get", "pods", "--token=abc", "-o", "json"]),
+            vec!["get", "pods", "--token=***", "-o", "json"]
+        );
+        assert_eq!(
+            sanitize_argv(&["auth", "login", "--password=supersecret"]),
+            vec!["auth", "login", "--password=***"]
+        );
+        // Standalone --flag with separate value arg
+        assert_eq!(
+            sanitize_argv(&["auth", "login", "--token", "abc123"]),
+            vec!["auth", "login", "--token", "***"]
+        );
+        // --from-literal=KEY=value collapses the whole literal
+        assert_eq!(
+            sanitize_argv(&["create", "secret", "generic", "--from-literal=a=b"]),
+            vec!["create", "secret", "generic", "--from-literal=***"]
+        );
+        // Ordinary args (pod names, ports, numbers) stay intact
+        assert_eq!(
+            sanitize_argv(&["logs", "-f", "nginx", "-c", "main", "--tail=100"]),
+            vec!["logs", "-f", "nginx", "-c", "main", "--tail=100"]
+        );
     }
 }

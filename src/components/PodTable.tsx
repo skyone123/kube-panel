@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PodView, PodActionMode } from '../types';
+import { useContextMenu } from './useContextMenu';
 
 const BAD = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'Error']);
 
@@ -25,8 +26,6 @@ function statusPill(status: string) {
   return <span className="status-pill warn">{status}</span>;
 }
 
-type CtxMenuState = { pod: PodView; x: number; y: number } | null;
-
 export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail, onPortForward }: PodTableProps) {
   const q = query.trim().toLowerCase();
   const shown = q
@@ -37,42 +36,30 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
     : pods;
   const selectedKey = selected ? `${selected.namespace}/${selected.name}` : null;
 
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const { menu: ctxMenu, pos, menuRef, openMenu, closeMenu } = useContextMenu<PodView>();
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set());
+
+  // Drop multi-selection keys that no longer exist (namespace/context switch
+  // or pods list refresh removed them). Without this, "Tail 3 pods" can show
+  // while the target list is stale/empty.
+  useEffect(() => {
+    if (multiSel.size === 0) return;
+    const valid = new Set(shown.map(p => `${p.namespace}/${p.name}`));
+    setMultiSel(prev => {
+      const next = new Set<string>();
+      let changed = false;
+      for (const k of prev) {
+        if (valid.has(k)) next.add(k);
+        else changed = true;
+      }
+      if (next.size !== prev.size) changed = true;
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pods, shown]);
 
   const allShownKeys = shown.map(p => `${p.namespace}/${p.name}`);
   const allSelected = allShownKeys.length > 0 && allShownKeys.every(k => multiSel.has(k));
-
-  // Close on Escape
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCtxMenu(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ctxMenu]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setCtxMenu(null);
-      }
-    };
-    // Use mousedown so it fires before click handlers on rows
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [ctxMenu]);
-
-  const handleContext = (e: React.MouseEvent, pod: PodView) => {
-    e.preventDefault();
-    setCtxMenu({ pod, x: e.clientX, y: e.clientY });
-  };
-
-  const closeMenu = () => setCtxMenu(null);
 
   const copyName = (pod: PodView) => {
     navigator.clipboard.writeText(pod.name);
@@ -87,7 +74,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
 
   const fireAction = (mode: PodActionMode) => {
     if (ctxMenu) {
-      onPodAction?.(ctxMenu.pod, mode);
+      onPodAction?.(ctxMenu.target, mode);
       closeMenu();
     }
   };
@@ -168,7 +155,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
                 key={key}
                 className={`pod-row ${cls}${isSel ? ' selected' : ''}`}
                 onClick={() => onSelect?.(p)}
-                onContextMenu={e => handleContext(e, p)}
+                onContextMenu={e => openMenu(e, p)}
                 style={{ cursor: onSelect ? 'pointer' : 'default' }}
               >
                 <td className="col-sel">
@@ -198,12 +185,12 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
         <div
           ref={menuRef}
           className="pod-ctx-menu"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: pos.x, top: pos.y }}
         >
-          <button className="ctx-item" onClick={() => copyName(ctxMenu.pod)} title="复制 pod 名">
+          <button className="ctx-item" onClick={() => copyName(ctxMenu.target)} title="复制 pod 名">
             Copy name
           </button>
-          <button className="ctx-item" onClick={() => copyKubectlLogs(ctxMenu.pod)} title="复制等价的 kubectl logs 命令">
+          <button className="ctx-item" onClick={() => copyKubectlLogs(ctxMenu.target)} title="复制等价的 kubectl logs 命令">
             Copy kubectl logs
           </button>
           <div className="ctx-sep" />
@@ -213,7 +200,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           <button className="ctx-item" onClick={() => fireAction('configmaps')} title="查看该 pod 引用的 ConfigMap 键值">
             Show ConfigMaps
           </button>
-          <button className="ctx-item" onClick={() => { onPortForward?.(ctxMenu.pod); closeMenu(); }} title="打开 port-forward 面板并预填 pod/名称（本地端口转发）">
+          <button className="ctx-item" onClick={() => { onPortForward?.(ctxMenu.target); closeMenu(); }} title="打开 port-forward 面板并预填 pod/名称（本地端口转发）">
             Port-forward
           </button>
           <button className="ctx-item" onClick={() => fireAction('secrets')} title="查看该命名空间内的 Secret 键值（值默认打码，可主动揭秘）">

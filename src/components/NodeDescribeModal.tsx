@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { NodeView } from '../types';
 import { describeNode } from '../api/tauri';
 import { HighlightText } from './HighlightText';
+import { ExportButton } from './ExportButton';
 
 interface NodeDescribeModalProps {
   node: NodeView;
@@ -30,19 +31,6 @@ export function NodeDescribeModal({ node, ctxName, onClose }: NodeDescribeModalP
     if (data) navigator.clipboard.writeText(data);
   };
 
-  const handleExport = () => {
-    if (!data) return;
-    const blob = new Blob([data], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${node.name}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="pod-modal-backdrop" onMouseDown={onClose}>
       <div className="pod-modal" onMouseDown={e => e.stopPropagation()}>
@@ -62,7 +50,7 @@ export function NodeDescribeModal({ node, ctxName, onClose }: NodeDescribeModalP
             <>
               <div className="yaml-actions">
                 <button className="ctx-item" onClick={handleCopy} title="复制 describe 输出到剪贴板">Copy</button>
-                <button className="ctx-item" onClick={handleExport} title="导出为 .txt 文件">Export</button>
+                <ExportButton fileName={`${node.name}.txt`} content={data || ''} label="Export" className="ctx-item" />
               </div>
               <pre className="describe-output mono">
                 {data.split('\n').map((line, i) => (

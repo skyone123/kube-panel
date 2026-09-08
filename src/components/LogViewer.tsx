@@ -3,13 +3,11 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getPodLogs, listContexts, streamPodLogs, stopLogStream, onLogChunk, exportPodLogs, type LogChunk } from '../api/tauri';
 import type { PodView } from '../types';
-import { useAppStore } from '../stores/appStore';
 
 const MAX_LINES = 5000;
 const DROP_BATCH = 500;
 
 export function LogViewer({ pod }: { pod: PodView | null }) {
-  const { namespace } = useAppStore();
   const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
   const ctxName = contexts.find(c => c.current)?.name ?? '';
 
@@ -73,7 +71,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
       let active = true;
       (async () => {
         try {
-          const id = await streamPodLogs(ctxName, namespace, pod.name, cont, previous, tail, sinceArg);
+          const id = await streamPodLogs(ctxName, pod.namespace, pod.name, cont, previous, tail, sinceArg);
           if (!active || cancelled) {
             // Component/effect torn down while we were starting — stop the orphan.
             try { await stopLogStream(id); } catch { /* noop */ }
@@ -118,7 +116,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
       let active = true;
       (async () => {
         try {
-          const text = await getPodLogs(ctxName, namespace, pod.name, cont, previous, tail);
+          const text = await getPodLogs(ctxName, pod.namespace, pod.name, cont, previous, tail);
           if (!active || cancelled) return;
           setLines(text ? [text] : []);
         } catch {
@@ -132,7 +130,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxName, namespace, pod?.name, effectiveContainer, previous, since, tail, follow]);
+  }, [ctxName, pod?.namespace, pod?.name, effectiveContainer, previous, since, tail, follow]);
 
   // --- Derived: display lines + regex search ---
 
@@ -210,7 +208,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     setExportMsg('');
     try {
       // Full log dump via native save dialog (Rust side, no --tail).
-      const res = await exportPodLogs(ctxName, namespace, pod.name, effectiveContainer || null, previous);
+      const res = await exportPodLogs(ctxName, pod.namespace, pod.name, effectiveContainer || null, previous);
       if (res !== 'cancelled') {
         setExportMsg(`Exported full logs → ${res}`);
       }

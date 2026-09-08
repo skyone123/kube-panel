@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContextMenu } from './useContextMenu';
 import type { DeploymentView, RolloutMode } from '../types';
 
 interface DeploymentTableProps {
@@ -6,8 +6,6 @@ interface DeploymentTableProps {
   query: string;
   onAction?: (deploy: DeploymentView, mode: RolloutMode) => void;
 }
-
-type CtxMenuState = { deploy: DeploymentView; x: number; y: number } | null;
 
 export function DeploymentTable({ deployments, query, onAction }: DeploymentTableProps) {
   const q = query.trim().toLowerCase();
@@ -18,41 +16,11 @@ export function DeploymentTable({ deployments, query, onAction }: DeploymentTabl
         d.images.some(img => img.toLowerCase().includes(q)))
     : deployments;
 
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCtxMenu(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ctxMenu]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setCtxMenu(null);
-      }
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [ctxMenu]);
-
-  const handleContext = (e: React.MouseEvent, deploy: DeploymentView) => {
-    e.preventDefault();
-    setCtxMenu({ deploy, x: e.clientX, y: e.clientY });
-  };
-
-  const closeMenu = () => setCtxMenu(null);
+  const { menu, pos, menuRef, openMenu, closeMenu } = useContextMenu<DeploymentView>();
 
   const fireAction = (mode: RolloutMode) => {
-    if (ctxMenu) {
-      onAction?.(ctxMenu.deploy, mode);
+    if (menu) {
+      onAction?.(menu.target, mode);
       closeMenu();
     }
   };
@@ -81,7 +49,7 @@ export function DeploymentTable({ deployments, query, onAction }: DeploymentTabl
               <tr
                 key={key}
                 className="pod-row status-ok"
-                onContextMenu={e => handleContext(e, d)}
+                onContextMenu={e => openMenu(e, d)}
                 style={{ cursor: 'default' }}
               >
                 <td className="col-name">{d.name}</td>
@@ -98,11 +66,11 @@ export function DeploymentTable({ deployments, query, onAction }: DeploymentTabl
         </tbody>
       </table>
 
-      {ctxMenu && (
+      {menu && (
         <div
           ref={menuRef}
           className="pod-ctx-menu"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: pos.x, top: pos.y }}
         >
           <button className="ctx-item" onClick={() => fireAction('restart')} title="kubectl rollout restart（滚动重启，不中断服务）">
             Restart

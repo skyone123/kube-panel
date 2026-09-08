@@ -23,11 +23,18 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   const unlistenDataRef = useRef<(() => void) | null>(null);
   const unlistenExitRef = useRef<(() => void) | null>(null);
   const termDivRef = useRef<HTMLDivElement | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.isComposing) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -65,7 +72,7 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   }, [connected]);
 
   const handleConnect = async () => {
-    if (!ctxName) return;
+    if (!ctxName || connected) return;
     setError(null);
     // Reconnecting after a Disconnect: dispose the previous Terminal instance
     // (its DOM was already mounted), otherwise a second open() on the same div
@@ -75,6 +82,14 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
       termRef.current = null;
       fitRef.current = null;
     }
+    // Tear down any previously-registered listeners before subscribing again.
+    const prevUnData = unlistenDataRef.current;
+    const prevUnExit = unlistenExitRef.current;
+    unlistenDataRef.current = null;
+    unlistenExitRef.current = null;
+    if (prevUnData) { try { prevUnData(); } catch { /* noop */ } }
+    if (prevUnExit) { try { prevUnExit(); } catch { /* noop */ } }
+
     const cont = effectiveContainer;
     if (!cont) {
       setError('No container available');
@@ -87,6 +102,11 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
 
     try {
       const id = await startExec(ctxName, pod.namespace, pod.name, cont, cmd);
+      if (!mountedRef.current) {
+        // Unmounted while starting — stop the orphan session.
+        try { void stopExec(id); } catch { /* noop */ }
+        return;
+      }
       idRef.current = id;
 
       const term = new Terminal({
@@ -112,6 +132,11 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
           termRef.current.write(e.data);
         }
       });
+      if (!mountedRef.current) {
+        try { unlistenData(); } catch { /* noop */ }
+        try { void stopExec(id); } catch { /* noop */ }
+        return;
+      }
       unlistenDataRef.current = unlistenData;
 
       const unlistenExit = await onPtyExit((e) => {
@@ -121,6 +146,11 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
           setConnected(false);
         }
       });
+      if (!mountedRef.current) {
+        try { unlistenExit(); } catch { /* noop */ }
+        try { void stopExec(id); } catch { /* noop */ }
+        return;
+      }
       unlistenExitRef.current = unlistenExit;
 
       // User keystrokes → backend
@@ -142,7 +172,7 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
       setConnected(true);
       term.focus();
     } catch (e) {
-      setError(String(e));
+      if (mountedRef.current) setError(String(e));
     }
   };
 
@@ -198,7 +228,7 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
               value={command}
               onChange={e => setCommand(e.target.value)}
               disabled={connected}
-              onKeyDown={e => { if (e.key === 'Enter' && !connected) handleConnect(); }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !connected) handleConnect(); }}
               placeholder="sh"
               title="要执行的命令，默认 sh"
             />

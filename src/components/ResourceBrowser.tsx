@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ResourceKind, ResourceRow } from '../types';
 import { getResources } from '../api/tauri';
 import { ResourceDescribeModal } from './ResourceDescribeModal';
+import { useContextMenu } from './useContextMenu';
 
 interface ResourceBrowserProps {
   ctxName: string;
@@ -20,14 +21,16 @@ const KIND_OPTIONS: { value: ResourceKind; label: string }[] = [
   { value: 'cronjob', label: 'CronJobs' },
 ];
 
-type CtxMenuState = { row: ResourceRow; kind: ResourceKind; x: number; y: number } | null;
+interface CtxTarget {
+  row: ResourceRow;
+  kind: ResourceKind;
+}
 
 export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserProps) {
   const [kind, setKind] = useState<ResourceKind>('svc');
   const [q, setQ] = useState('');
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
+  const { menu, pos, menuRef, openMenu, closeMenu } = useContextMenu<CtxTarget>();
   const [describe, setDescribe] = useState<{ kind: ResourceKind; name: string; namespace: string } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const refetchInterval = live ? 5000 : false;
 
@@ -50,37 +53,10 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
         r.values.some(v => v.toLowerCase().includes(ql)))
     : rows;
 
-  // Close context menu on Escape
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCtxMenu(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ctxMenu]);
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setCtxMenu(null);
-      }
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [ctxMenu]);
-
-  const handleContext = (e: React.MouseEvent, row: ResourceRow) => {
-    e.preventDefault();
-    setCtxMenu({ row, kind, x: e.clientX, y: e.clientY });
-  };
-
   const fireDescribe = () => {
-    if (ctxMenu) {
-      setDescribe({ kind: ctxMenu.kind, name: ctxMenu.row.name, namespace: ctxMenu.row.namespace });
-      setCtxMenu(null);
+    if (menu) {
+      setDescribe({ kind: menu.target.kind, name: menu.target.row.name, namespace: menu.target.row.namespace });
+      closeMenu();
     }
   };
 
@@ -135,7 +111,7 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
                 <tr
                   key={key}
                   className="pod-row status-ok"
-                  onContextMenu={e => handleContext(e, r)}
+                  onContextMenu={e => openMenu(e, { row: r, kind })}
                   style={{ cursor: 'default' }}
                 >
                   <td className="col-name">{r.name}</td>
@@ -151,11 +127,11 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
         </table>
       )}
 
-      {ctxMenu && (
+      {menu && (
         <div
           ref={menuRef}
           className="pod-ctx-menu"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: pos.x, top: pos.y }}
         >
           <button className="ctx-item" onClick={fireDescribe} title="kubectl describe 该资源（只读）">
             Describe

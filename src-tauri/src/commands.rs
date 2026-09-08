@@ -20,6 +20,11 @@ pub fn current_context() -> Result<Option<ContextView>, String> {
 
 #[tauri::command]
 pub async fn use_context(name: String, rt: State<'_, KubeRuntime>) -> Result<(), String> {
+    // A context name starts with '-' could be parsed as a kubectl flag, so
+    // reject those outright (k8s context names can't begin with '-' anyway).
+    if name.starts_with('-') || name.is_empty() {
+        return Err("invalid context name".into());
+    }
     // kubectl config use-context does not take -n; pass namespace=None and args=["config","use-context",name]
     let res = rt.run(&name, None, &["config", "use-context", &name]).await
         .map_err(|e| e.to_string())?;
@@ -122,12 +127,37 @@ pub async fn export_pod_logs(
     let path = file_path.into_path().map_err(|e| e.to_string())?;
 
     // Stream `kubectl logs` (full) stdout → file; bounded memory.
+    // Drain stderr concurrently: otherwise a kubectl that spams stderr
+    // (warnings/retries) fills the pipe buffer and blocks forever writing,
+    // which deadlocks the stdout loop (stderr is never consumed until exit).
     let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let mut stdout = child.stdout.take().ok_or("kubectl produced no stdout")?;
+    let mut stderr_task = None;
+    if let Some(stderr) = child.stderr.take() {
+        stderr_task = Some(tokio::spawn(async move {
+            // Drain everything so kubectl never blocks on the pipe; keep only
+            // the tail (last 1 MiB) of accumulated stderr for the error path.
+            const CAP: usize = 1024 * 1024;
+            let mut kept: Vec<u8> = Vec::new();
+            let mut reader = stderr;
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                let n = reader.read(&mut buf).await.unwrap_or(0);
+                if n == 0 { break; }
+                kept.extend_from_slice(&buf[..n]);
+                if kept.len() > CAP {
+                    let over = kept.len() - CAP;
+                    kept.drain(..over);
+                }
+            }
+            // Only decode what we kept (lossy, so invalid byte runs don't panic).
+            String::from_utf8_lossy(&kept).into_owned()
+        }));
+    }
     let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; 64 * 1024];
     loop {
@@ -140,15 +170,17 @@ pub async fn export_pod_logs(
     drop(stdout);
 
     let exit = child.wait().await.map_err(|e| e.to_string())?;
+    let err_msg = match stderr_task {
+        Some(task) => task.await.unwrap_or_default(),
+        None => String::new(),
+    };
     if !exit.success() {
         let _ = std::fs::remove_file(&path); // don't leave a partial file behind
-        let mut msg = String::new();
-        if let Some(mut stderr) = child.stderr.take() {
-            let _ = stderr.read_to_string(&mut msg).await;
-        }
-        if msg.trim().is_empty() {
-            msg = format!("kubectl exited with code {}", exit.code().unwrap_or(-1));
-        }
+        let msg = if err_msg.trim().is_empty() {
+            format!("kubectl exited with code {}", exit.code().unwrap_or(-1))
+        } else {
+            err_msg
+        };
         return Err(msg);
     }
 

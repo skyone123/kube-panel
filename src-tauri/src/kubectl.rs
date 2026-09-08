@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub struct RunResult {
@@ -6,6 +8,13 @@ pub struct RunResult {
     pub stdout: String,
     pub stderr: String,
 }
+
+/// Hard cap on every one-shot kubectl call. kubectl normally touches the API
+/// server; if it hangs (wrong kubeconfig, unreachable apiserver, stuck cert
+/// prompt) `.output().await` would hang forever and, with the 5s auto-refresh
+/// polling everything, orphan kubectl processes would pile up. A timeout kills
+/// the child and surfaces a clear error instead.
+const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct Kubectl {
     binary: String,
@@ -57,12 +66,85 @@ impl Kubectl {
         let mut cmd = self.build(context, namespace, args);
         // kill on drop so children don't leak if the caller future is cancelled
         cmd.kill_on_drop(true);
-        let out = cmd.output().await?;
-        Ok(RunResult {
-            exit_code: out.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        })
+        run_cmd_with_timeout(cmd, RUN_TIMEOUT).await
+    }
+}
+
+/// One-shot execution: spawn, read stdout/stderr in bounded buffers, wait with
+/// a timeout, and KILL the child on timeout so a hung kubectl can't pile up.
+/// Returns a parsed RunResult.
+pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<RunResult> {
+    // Cap captured output: a pathological `-o json` or unfollowed `logs` on a
+    // chatty pod can return far more than we ever render, and buffering it all
+    // would balloon memory. We keep only the first 8 MiB of each stream.
+    const MAX_CAPTURE: usize = 8 * 1024 * 1024;
+
+    // Pipe stdout/stderr explicitly (like Command::output does) so the reader
+    // tasks own the handles and nothing leaks to the parent's console.
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn()?;
+
+    // Take the pipes BEFORE spawning the readers so the reader tasks own them;
+    // `wait_with_output()` can't be used here because it consumes `child` and
+    // would make the timeout branch unable to `kill()`.
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    async fn drain(pipe: Option<tokio::process::ChildStdout>) -> Vec<u8> {
+        let Some(mut r) = pipe else { return Vec::new(); };
+        let mut buf = Vec::new();
+        let mut tmp = vec![0u8; 32 * 1024];
+        loop {
+            let n = r.read(&mut tmp).await.unwrap_or(0);
+            if n == 0 { break; }
+            if buf.len() >= MAX_CAPTURE { continue; }
+            let room = MAX_CAPTURE - buf.len();
+            buf.extend_from_slice(&tmp[..n.min(room)]);
+        }
+        buf
+    }
+    async fn drain_err(pipe: Option<tokio::process::ChildStderr>) -> Vec<u8> {
+        let Some(mut r) = pipe else { return Vec::new(); };
+        let mut buf = Vec::new();
+        let mut tmp = vec![0u8; 32 * 1024];
+        loop {
+            let n = r.read(&mut tmp).await.unwrap_or(0);
+            if n == 0 { break; }
+            if buf.len() >= MAX_CAPTURE { continue; }
+            let room = MAX_CAPTURE - buf.len();
+            buf.extend_from_slice(&tmp[..n.min(room)]);
+        }
+        buf
+    }
+
+    let pending = {
+        let stdout_pipe = stdout_pipe;
+        let stderr_pipe = stderr_pipe;
+        async move { (drain(stdout_pipe).await, drain_err(stderr_pipe).await) }
+    };
+
+    match tokio::time::timeout(timeout, async {
+        let status = child.wait().await?;
+        let (stdout_bytes, stderr_bytes) = pending.await;
+        Ok::<_, std::io::Error>((status, stdout_bytes, stderr_bytes))
+    })
+    .await
+    {
+        Ok(Ok((status, stdout_bytes, stderr_bytes))) => Ok(RunResult {
+            exit_code: status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+        }),
+        Ok(Err(e)) => Err(e),
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await; // reap so we don't leave a zombie
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("kubectl timed out after {timeout:?}"),
+            ))
+        }
     }
 }
 

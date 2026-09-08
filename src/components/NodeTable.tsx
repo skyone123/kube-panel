@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContextMenu } from './useContextMenu';
 import type { NodeView } from '../types';
 
 interface NodeTableProps {
@@ -6,8 +6,6 @@ interface NodeTableProps {
   query: string;
   onDescribe?: (node: NodeView) => void;
 }
-
-type CtxMenuState = { node: NodeView; x: number; y: number } | null;
 
 export function NodeTable({ nodes, query, onDescribe }: NodeTableProps) {
   const q = query.trim().toLowerCase();
@@ -19,41 +17,11 @@ export function NodeTable({ nodes, query, onDescribe }: NodeTableProps) {
         n.os.toLowerCase().includes(q))
     : nodes;
 
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setCtxMenu(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ctxMenu]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setCtxMenu(null);
-      }
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [ctxMenu]);
-
-  const handleContext = (e: React.MouseEvent, node: NodeView) => {
-    e.preventDefault();
-    setCtxMenu({ node, x: e.clientX, y: e.clientY });
-  };
-
-  const closeMenu = () => setCtxMenu(null);
+  const { menu, pos, menuRef, openMenu, closeMenu } = useContextMenu<NodeView>();
 
   const fireDescribe = () => {
-    if (ctxMenu) {
-      onDescribe?.(ctxMenu.node);
+    if (menu) {
+      onDescribe?.(menu.target);
       closeMenu();
     }
   };
@@ -80,7 +48,7 @@ export function NodeTable({ nodes, query, onDescribe }: NodeTableProps) {
             <tr
               key={n.name}
               className={`pod-row ${n.ready ? 'status-ok' : 'status-err'}`}
-              onContextMenu={e => handleContext(e, n)}
+              onContextMenu={e => openMenu(e, n)}
               style={{ cursor: 'default' }}
             >
               <td className="col-name">{n.name}</td>
@@ -109,11 +77,11 @@ export function NodeTable({ nodes, query, onDescribe }: NodeTableProps) {
         </tbody>
       </table>
 
-      {ctxMenu && (
+      {menu && (
         <div
           ref={menuRef}
           className="pod-ctx-menu"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: pos.x, top: pos.y }}
         >
           <button className="ctx-item" onClick={fireDescribe} title="kubectl describe node 文本（只读）">
             Describe

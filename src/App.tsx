@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
@@ -41,6 +41,14 @@ export default function App() {
   const { data: contexts = [] } = useQuery({ queryKey: ['contexts'], queryFn: listContexts });
   const ctxName = contexts.find(c => c.current)?.name ?? '';
   const current = contexts.find(c => c.current) ?? null;
+
+  // When the active context changes, clear the pod selection & single-pod
+  // modals that reference pods from the old context (log stream would keep
+  // pointing at a stale pod otherwise).
+  useEffect(() => {
+    setSelectedPod(null);
+    setPodAction(null);
+  }, [ctxName]);
   const { data: pods = [] } = useQuery({
     queryKey: ['pods', ctxName, namespace],
     queryFn: () => getPods(ctxName, namespace),

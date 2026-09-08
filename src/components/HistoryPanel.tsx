@@ -1,13 +1,15 @@
+import { useMemo } from 'react';
 import type { HistoryEntry } from '../types';
 
 export function HistoryPanel({ entries, query }: { entries: HistoryEntry[]; query: string }) {
   const q = query.trim().toLowerCase();
-  const shown = q
-    ? entries.filter(e => {
-        const hay = `${e.argv.join(' ')} ${e.context} ${e.namespace ?? ''}`.toLowerCase();
-        return hay.includes(q);
-      })
-    : entries;
+  const shown = useMemo(() => {
+    if (!q) return entries;
+    return entries.filter(e => {
+      const hay = `${e.argv.join(' ')} ${e.context} ${e.namespace ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [q, entries]);
   if (shown.length === 0) {
     return (
       <div className="history-empty">

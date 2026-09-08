@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startPortForward, stopPortForward, listPortForwards, clearPortForward, onPfStatus } from '../api/tauri';
 
@@ -29,6 +29,11 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
   const [localPort, setLocalPort] = useState('8080');
   const [remotePort, setRemotePort] = useState('80');
   const [confirming, setConfirming] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const { data: sessions = [] } = useQuery({
     queryKey: ['port-forwards'],
@@ -38,16 +43,27 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
   // Live updates: invalidate the list whenever a pf_status event arrives.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
+    let cancelled = false;
     onPfStatus(() => {
       qc.invalidateQueries({ queryKey: ['port-forwards'] });
-    }).then(fn => { unlisten = fn; });
-    return () => { if (unlisten) unlisten(); };
+    }).then(fn => {
+      if (cancelled) {
+        try { fn(); } catch { /* noop */ }
+        return;
+      }
+      unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) { try { unlisten(); } catch { /* noop */ } }
+      unlisten = null;
+    };
   }, [qc]);
 
   // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.isComposing && mountedRef.current) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -144,7 +160,7 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
                   placeholder="pod/foo or svc/bar"
                   value={target}
                   onChange={e => setTarget(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && targetValid && portsValid) setConfirming(true); }}
                   title="转发目标，格式 pod/名称 或 svc/名称"
                 />
               </label>
@@ -157,7 +173,7 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
                   max={65535}
                   value={localPort}
                   onChange={e => setLocalPort(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && targetValid && portsValid) setConfirming(true); }}
                   title="本地监听端口（1-65535）"
                 />
               </label>
@@ -171,7 +187,7 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
                   max={65535}
                   value={remotePort}
                   onChange={e => setRemotePort(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && targetValid && portsValid) setConfirming(true); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && targetValid && portsValid) setConfirming(true); }}
                   title="转发到 pod 的端口（1-65535）"
                 />
               </label>

@@ -22,9 +22,19 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentLineRef = useRef<HTMLDivElement | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
-  const stoppedRef = useRef(false);
 
-  // Subscribe to log_chunk events filtered by mergeId. Stop on unmount.
+  // Stopping is idempotent (cheap & async) — called by Stop/Esc.
+  const stopStream = () => {
+    try { void stopLogStream(mergeId); } catch { /* noop */ }
+  };
+
+  // Subscribe to log_chunk events filtered by mergeId. The stream itself is
+  // started (and stopped) by the merge orchestrator in App; this component only
+  // listens. Cleanup unsubscribes the listener but must NOT stop the stream —
+  // React StrictMode double-runs effects (setup→cleanup→setup) in dev, and
+  // killing the stream on the first cleanup would leave the second subscription
+  // listening on a dead stream forever. Stopping is the caller's job (Stop /
+  // Esc / onClose).
   useEffect(() => {
     let cancelled = false;
     let un: (() => void) | null = null;
@@ -49,13 +59,8 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
 
     return () => {
       cancelled = true;
-      if (un) { try { un(); } catch { /* noop */ }
-        unlistenRef.current = null;
-      }
-      if (!stoppedRef.current) {
-        stoppedRef.current = true;
-        try { void stopLogStream(mergeId); } catch { /* noop */ }
-      }
+      if (un) { try { un(); } catch { /* noop */ } }
+      unlistenRef.current = null;
     };
   }, [mergeId]);
 
@@ -63,15 +68,13 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (!stoppedRef.current) {
-          stoppedRef.current = true;
-          try { void stopLogStream(mergeId); } catch { /* noop */ }
-        }
+        stopStream();
         onClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mergeId, onClose]);
 
   // Flatten chunk buffer into display lines.
@@ -129,10 +132,7 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   };
 
   const handleStop = () => {
-    if (!stoppedRef.current) {
-      stoppedRef.current = true;
-      try { void stopLogStream(mergeId); } catch { /* noop */ }
-    }
+    stopStream();
     onClose();
   };
 
