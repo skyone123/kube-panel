@@ -680,6 +680,19 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   font-size: 11px;
   color: var(--text-muted);
 }
+.export-msg {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.lc-tail-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
 .lc-btn {
   padding: 4px 10px;
   background: var(--bg);

@@ -164,6 +164,34 @@ pub async fn export_pod_logs(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Generic "save this text to a file" via the native save dialog — the single
+/// replacement for the browser `Blob + <a download>` pattern, which silently
+/// does nothing inside Tauri's WebView2. Returns the saved path, or
+/// "cancelled" if the user dismissed the dialog.
+#[tauri::command]
+pub async fn save_text_to_file(
+    app: AppHandle,
+    suggested_name: String,
+    content: String,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(&suggested_name)
+        .add_filter("Text files", &["txt", "log", "yaml", "json", "yml"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let Some(file_path) = rx.await.map_err(|e| format!("save dialog failed: {e}"))? else {
+        return Ok("cancelled".into());
+    };
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn list_history(limit: i64, history: State<'_, History>) -> Result<Vec<HistoryEntry>, String> {
     history.list(limit).map_err(|e| e.to_string())

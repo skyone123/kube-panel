@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ResourceKind } from '../types';
 import { describeResource } from '../api/tauri';
 import { HighlightText } from './HighlightText';
+import { ExportButton } from './ExportButton';
 
 interface ResourceDescribeModalProps {
   kind: ResourceKind;
@@ -32,19 +33,6 @@ export function ResourceDescribeModal({ kind, name, namespace, ctxName, onClose 
     if (data) navigator.clipboard.writeText(data);
   };
 
-  const handleExport = () => {
-    if (!data) return;
-    const blob = new Blob([data], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${name}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="pod-modal-backdrop" onMouseDown={onClose}>
       <div className="pod-modal" onMouseDown={e => e.stopPropagation()}>
@@ -64,7 +52,7 @@ export function ResourceDescribeModal({ kind, name, namespace, ctxName, onClose 
             <>
               <div className="yaml-actions">
                 <button className="ctx-item" onClick={handleCopy} title="复制 describe 输出到剪贴板">Copy</button>
-                <button className="ctx-item" onClick={handleExport} title="导出为 .txt 文件">Export</button>
+                <ExportButton fileName={`${name}.txt`} content={data ?? ''} />
               </div>
               <pre className="describe-output mono">
                 {data.split('\n').map((line, i) => (

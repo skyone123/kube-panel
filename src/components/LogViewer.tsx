@@ -31,6 +31,12 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
+  // Container dropdown: no "unset" placeholder — a single-container pod locks to
+  // that container, a multi-container pod defaults to the first. `container`
+  // may hold a stale value when switching pods, so derive the effective pick.
+  const containers = pod?.containers ?? [];
+  const effectiveContainer = containers.includes(container) ? container : (containers[0] ?? '');
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentLineRef = useRef<HTMLDivElement | null>(null);
   const streamIdRef = useRef<string | null>(null);
@@ -59,7 +65,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
       return () => { /* cleanup already triggered above via teardown */ };
     }
 
-    const cont = container || null;
+    const cont = effectiveContainer || null;
     const sinceArg = since || null;
 
     if (follow) {
@@ -126,7 +132,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxName, namespace, pod?.name, container, previous, since, tail, follow]);
+  }, [ctxName, namespace, pod?.name, effectiveContainer, previous, since, tail, follow]);
 
   // --- Derived: display lines + regex search ---
 
@@ -232,7 +238,6 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     return parts.length ? parts : line;
   };
 
-  const containers = pod?.containers ?? [];
   const currentLineIdx = matchIndices.length > 0 ? matchIndices[currentMatch] : -1;
 
   // --- Build controls + log area as shared content (used in both layouts) ---
@@ -243,14 +248,17 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
         <span className="lc-label">Container</span>
         <select
           className="lc-select"
-          value={container}
+          value={effectiveContainer}
           onChange={e => setContainer(e.target.value)}
-          title="选择要查看日志的容器；default=主容器"
+          title="选择要查看日志的容器；多容器 pod 必须选一个"
         >
-          <option value="">default</option>
-          {containers.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
+          {containers.length === 0 ? (
+            <option value="">(no containers)</option>
+          ) : (
+            containers.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))
+          )}
         </select>
       </label>
 
@@ -283,10 +291,12 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
           className="lc-input"
           type="number"
           min={1}
+          max={MAX_LINES}
           value={tail}
-          onChange={e => setTail(Math.max(1, Number(e.target.value) || 1))}
-          title="只看最后 N 行日志"
+          onChange={e => setTail(Math.min(MAX_LINES, Math.max(1, Number(e.target.value) || 1)))}
+          title={`只看最后 N 行日志（上限 ${MAX_LINES} 行，超出部分会被环形缓冲截断）`}
         />
+        <span className="lc-tail-hint" title={`日志缓冲最多保留 ${MAX_LINES} 行`}>≤{MAX_LINES}</span>
       </label>
 
       <label className="lc-field lc-check" title="跟随新日志滚动（实时流式）">

@@ -40,6 +40,7 @@ pub fn run() {
             commands::list_namespaces,
             commands::get_pod_logs,
             commands::export_pod_logs,
+            commands::save_text_to_file,
             commands::list_history,
             commands::search_history,
             commands::stream_pod_logs,

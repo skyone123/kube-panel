@@ -67,7 +67,15 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   const handleConnect = async () => {
     if (!ctxName) return;
     setError(null);
-    const cont = container || (pod.container_images[0]?.name ?? '');
+    // Reconnecting after a Disconnect: dispose the previous Terminal instance
+    // (its DOM was already mounted), otherwise a second open() on the same div
+    // stacks canvases / throws.
+    if (termRef.current) {
+      try { termRef.current.dispose(); } catch { /* noop */ }
+      termRef.current = null;
+      fitRef.current = null;
+    }
+    const cont = effectiveContainer;
     if (!cont) {
       setError('No container available');
       return;
@@ -150,6 +158,10 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   };
 
   const containers = pod.container_images ?? [];
+  const containerNames = containers.map(c => c.name);
+  // Dropdown never offers an "unset" placeholder — defaults to the first
+  // container and falls back cleanly when switching pods.
+  const effectiveContainer = containerNames.includes(container) ? container : (containers[0]?.name ?? '');
 
   return (
     <div className="pod-modal-backdrop" onMouseDown={onClose}>
@@ -164,15 +176,18 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
             <span className="lc-label">Container</span>
             <select
               className="lc-select"
-              value={container}
+              value={effectiveContainer}
               onChange={e => setContainer(e.target.value)}
               disabled={connected}
-              title="选择在哪个容器里执行命令；default=主容器"
+              title="选择在哪个容器里执行命令"
             >
-              <option value="">default</option>
-              {containers.map(c => (
-                <option key={c.name} value={c.name}>{c.name}</option>
-              ))}
+              {containers.length === 0 ? (
+                <option value="">(no containers)</option>
+              ) : (
+                containers.map(c => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))
+              )}
             </select>
           </label>
           <label className="lc-field">

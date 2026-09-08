@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
 import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, getSecrets, getSecretData } from '../api/tauri';
 import { HighlightText } from './HighlightText';
+import { ExportButton } from './ExportButton';
 
 interface PodActionModalProps {
   pod: PodView;
@@ -114,19 +115,6 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     navigator.clipboard.writeText(text);
   };
 
-  const handleExport = () => {
-    const text = entries.map(e => `${e.key}=${e.value}`).join('\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedCm ?? 'configmap'}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="cm-split">
       <div className="cm-list">
@@ -155,14 +143,12 @@ function ConfigmapsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
                 >
                   Copy all
                 </button>
-                <button
+                <ExportButton
                   className="ctx-item"
-                  onClick={handleExport}
+                  fileName={`${selectedCm ?? 'configmap'}.keys.txt`}
+                  content={entries.map(e => `${e.key}=${e.value}`).join('\n')}
                   disabled={entries.length === 0}
-                  title="导出当前 ConfigMap 全部键值为 .txt 文件"
-                >
-                  Export
-                </button>
+                />
               </span>
             </div>
             {cmDataQuery.isLoading ? (
@@ -544,19 +530,6 @@ function YamlPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     if (data) navigator.clipboard.writeText(data);
   };
 
-  const handleExport = () => {
-    if (!data) return;
-    const blob = new Blob([data], { type: 'text/yaml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${pod.name}.yaml`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   if (isLoading) return <div className="pod-modal-loading">Loading YAML…</div>;
   if (error) return <div className="pod-modal-error">Error: {(error as Error).message}</div>;
   if (!data) return <div className="pod-modal-empty">No YAML output.</div>;
@@ -567,7 +540,7 @@ function YamlPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     <>
       <div className="yaml-actions">
         <button className="ctx-item" onClick={handleCopy} title="复制 YAML 到剪贴板">Copy</button>
-        <button className="ctx-item" onClick={handleExport} title="导出为 .yaml 文件">Export</button>
+        <ExportButton className="ctx-item" fileName={`${pod.name}.yaml`} content={data ?? ''} />
       </div>
       <pre className="describe-output mono">
         {lines.map((line, i) => {

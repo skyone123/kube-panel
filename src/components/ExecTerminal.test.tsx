@@ -60,10 +60,10 @@ describe('ExecTerminal', () => {
     // The container select should have options for each container image
     expect(screen.getByText('Container')).toBeInTheDocument();
     const select = screen.getByRole('combobox') as HTMLSelectElement;
-    // "default" + 2 containers
-    expect(select.options.length).toBe(3);
-    expect(select.options[1].textContent).toBe('nginx');
-    expect(select.options[2].textContent).toBe('sidecar');
+    // Each container image gets an option; there is NO "default" placeholder
+    expect(select.options.length).toBe(2);
+    expect(select.options[0].textContent).toBe('nginx');
+    expect(select.options[1].textContent).toBe('sidecar');
   });
 
   it('Connect button calls startExec with the selected container and ["sh"] when command is empty', async () => {

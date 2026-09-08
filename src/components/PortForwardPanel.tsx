@@ -6,6 +6,7 @@ interface PortForwardPanelProps {
   ctxName: string;
   namespace: string;
   onClose: () => void;
+  initialTarget?: string;
 }
 
 function statusClass(status: string): string {
@@ -22,9 +23,9 @@ function relTime(ts: number): string {
   return `${Math.floor(diff / 3600000)}h ago`;
 }
 
-export function PortForwardPanel({ ctxName, namespace, onClose }: PortForwardPanelProps) {
+export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = '' }: PortForwardPanelProps) {
   const qc = useQueryClient();
-  const [target, setTarget] = useState('');
+  const [target, setTarget] = useState(initialTarget);
   const [localPort, setLocalPort] = useState('8080');
   const [remotePort, setRemotePort] = useState('80');
   const [confirming, setConfirming] = useState(false);

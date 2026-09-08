@@ -30,6 +30,7 @@ export default function App() {
   const [rolloutAction, setRolloutAction] = useState<{ deploy: DeploymentView; mode: RolloutMode } | null>(null);
   const [nodeDescribe, setNodeDescribe] = useState<{ node: NodeView } | null>(null);
   const [showPf, setShowPf] = useState(false);
+  const [pfTarget, setPfTarget] = useState('');
   const [live, setLive] = useState(true);
   const refetchInterval = live ? 5000 : false;
   // single source of truth: derive the current context from the ['contexts']
@@ -73,7 +74,7 @@ export default function App() {
             <span className="ctx-label">CONTEXT</span>
             <span className={`ctx-name${ctxName ? '' : ' empty'}`}>{ctxName || '— no context —'}</span>
             <NamespaceSwitcher />
-            <button className="topbar-pf-btn" onClick={() => setShowPf(true)} title="端口转发管理（启动/停止 kubectl port-forward）">Port-forward</button>
+            <button className="topbar-pf-btn" onClick={() => { setPfTarget(''); setShowPf(true); }} title="端口转发管理（启动/停止 kubectl port-forward）">Port-forward</button>
           </div>
           <div className="topbar-divider" />
           <div className="topbar-filter">
@@ -135,7 +136,7 @@ export default function App() {
             </div>
             <div className="pod-table-wrap">
               {resourceTab === 'pods' ? (
-                <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onMergeTail={async (pods) => {
+                <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onPortForward={(pod) => { setPfTarget(`pod/${pod.name}`); setShowPf(true); }} onMergeTail={async (pods) => {
                   try {
                     const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
                     const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);
@@ -200,7 +201,7 @@ export default function App() {
       {podAction?.mode === 'exec' && <ExecTerminal pod={podAction.pod} ctxName={ctxName} onClose={() => setPodAction(null)} />}
       {rolloutAction && <RolloutModal deploy={rolloutAction.deploy} mode={rolloutAction.mode} ctxName={ctxName} onClose={() => setRolloutAction(null)} />}
       {merge && <MergedLogViewer mergeId={merge.id} podNames={merge.pods.map(p => p.name)} onClose={() => setMerge(null)} />}
-      {showPf && <PortForwardPanel ctxName={ctxName} namespace={namespace} onClose={() => setShowPf(false)} />}
+      {showPf && <PortForwardPanel ctxName={ctxName} namespace={namespace} initialTarget={pfTarget} onClose={() => setShowPf(false)} />}
       {nodeDescribe && <NodeDescribeModal node={nodeDescribe.node} ctxName={ctxName} onClose={() => setNodeDescribe(null)} />}
     </div>
   );

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData, exportPodLogs } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData, exportPodLogs, saveTextToFile } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -103,5 +103,12 @@ describe('api wrappers', () => {
     const r = await exportPodLogs('dev', 'default', 'nginx', null, true);
     expect(invoke).toHaveBeenCalledWith('export_pod_logs', { context: 'dev', namespace: 'default', pod: 'nginx', container: null, previous: true });
     expect(r).toBe('C:/logs/nginx.log');
+  });
+
+  it('saveTextToFile passes suggestedName + content', async () => {
+    (invoke as any).mockResolvedValue('C:/out/demo.txt');
+    const r = await saveTextToFile('demo.txt', 'hello content');
+    expect(invoke).toHaveBeenCalledWith('save_text_to_file', { suggestedName: 'demo.txt', content: 'hello content' });
+    expect(r).toBe('C:/out/demo.txt');
   });
 });

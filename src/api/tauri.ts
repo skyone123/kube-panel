@@ -14,6 +14,11 @@ export const getPodLogs = (context: string, namespace: string, pod: string, cont
 // saved path, or "cancelled" if the user dismissed the dialog.
 export const exportPodLogs = (context: string, namespace: string, pod: string, container: string | null, previous: boolean) =>
   invoke<string>('export_pod_logs', { context, namespace, pod, container, previous });
+
+// Generic save-a-text-blob-to-a-file (native save dialog, written by Rust).
+// Replaces the browser Blob+<a download> pattern which is a no-op in WebView2.
+export const saveTextToFile = (suggestedName: string, content: string) =>
+  invoke<string>('save_text_to_file', { suggestedName, content });
 export const listHistory = (limit: number) => invoke<HistoryEntry[]>('list_history', { limit });
 export const searchHistory = (query: string, limit: number) => invoke<HistoryEntry[]>('search_history', { query, limit });
 

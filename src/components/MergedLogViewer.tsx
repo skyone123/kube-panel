@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onLogChunk, stopLogStream, type LogChunk } from '../api/tauri';
+import { ExportButton } from './ExportButton';
 
 const MAX_LINES = 5000;
 const DROP_BATCH = 500;
@@ -135,19 +136,6 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
     onClose();
   };
 
-  const handleExport = () => {
-    if (lines.length === 0) return;
-    const blob = new Blob([lines.join('')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `merged-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const highlightLine = (line: string, isCurrent: boolean): ReactNode => {
     if (!regex || !line) return line;
     const className = isCurrent ? 'log-match current' : 'log-match';
@@ -202,9 +190,12 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
         >↓</button>
       </div>
       <div className="lc-actions">
-        <button className="lc-btn" onClick={handleExport} disabled={lines.length === 0} title="导出当前缓冲区为 .log 文件">
-          Export
-        </button>
+        <ExportButton
+          className="lc-btn"
+          fileName={`merged-${new Date().toISOString().replace(/[:.]/g, '-')}.log`}
+          content={lines.join('')}
+          disabled={lines.length === 0}
+        />
         <button className="lc-stop" onClick={handleStop} title="停止所有日志流并关闭窗口">Stop</button>
       </div>
     </div>

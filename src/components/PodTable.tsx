@@ -10,6 +10,7 @@ interface PodTableProps {
   selected?: PodView | null;
   onPodAction?: (pod: PodView, mode: PodActionMode) => void;
   onMergeTail?: (pods: PodView[]) => void;
+  onPortForward?: (pod: PodView) => void;
 }
 
 function statusClass(status: string): 'status-error' | 'status-ok' | 'status-warn' {
@@ -26,7 +27,7 @@ function statusPill(status: string) {
 
 type CtxMenuState = { pod: PodView; x: number; y: number } | null;
 
-export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail }: PodTableProps) {
+export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail, onPortForward }: PodTableProps) {
   const q = query.trim().toLowerCase();
   const shown = q
     ? pods.filter(p =>
@@ -211,6 +212,9 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           </button>
           <button className="ctx-item" onClick={() => fireAction('configmaps')} title="查看该 pod 引用的 ConfigMap 键值">
             Show ConfigMaps
+          </button>
+          <button className="ctx-item" onClick={() => { onPortForward?.(ctxMenu.pod); closeMenu(); }} title="打开 port-forward 面板并预填 pod/名称（本地端口转发）">
+            Port-forward
           </button>
           <button className="ctx-item" onClick={() => fireAction('secrets')} title="查看该命名空间内的 Secret 键值（值默认打码，可主动揭秘）">
             Show Secrets
