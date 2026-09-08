@@ -85,6 +85,7 @@ export default function App() {
               </svg>
             </span>
             <input
+              id="filter-pods-input"
               className="filter-input"
               placeholder="Filter pods by name, namespace, node…"
               value={q}
@@ -183,6 +184,7 @@ export default function App() {
                     </svg>
                   </span>
                   <input
+                    id="search-history-input"
                     className="filter-input"
                     placeholder="Search history…"
                     value={histQuery}

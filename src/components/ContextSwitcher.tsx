@@ -19,6 +19,7 @@ export function ContextSwitcher() {
     <div className="ctx-switcher">
       <div className="ctx-select-wrap">
         <select
+          id="ctx-switcher-select"
           className="ctx-select"
           value={cur?.name ?? ''}
           onChange={e => mut.mutate(e.target.value)}

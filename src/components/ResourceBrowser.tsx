@@ -100,6 +100,7 @@ export function ResourceBrowser({ ctxName, namespace, live }: ResourceBrowserPro
         <span className="head-meta">{shown.length} {kind}</span>
         <span className="spacer" />
         <input
+          id="resource-browser-filter"
           className="filter-input resource-browser-filter"
           placeholder={`Filter ${kind}…`}
           value={q}
