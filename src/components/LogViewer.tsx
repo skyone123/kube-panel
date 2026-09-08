@@ -210,7 +210,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     setExportMsg('');
     try {
       // Full log dump via native save dialog (Rust side, no --tail).
-      const res = await exportPodLogs(ctxName, namespace, pod.name, container || null, previous);
+      const res = await exportPodLogs(ctxName, namespace, pod.name, effectiveContainer || null, previous);
       if (res !== 'cancelled') {
         setExportMsg(`Exported full logs → ${res}`);
       }
