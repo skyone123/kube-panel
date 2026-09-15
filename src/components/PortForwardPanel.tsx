@@ -35,6 +35,14 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Re-render periodically so `relTime` ("x min ago") stays fresh without
+  // waiting for a pf_status event to arrive.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   const { data: sessions = [] } = useQuery({
     queryKey: ['port-forwards'],
     queryFn: listPortForwards,

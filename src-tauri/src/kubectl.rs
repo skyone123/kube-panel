@@ -14,7 +14,7 @@ pub struct RunResult {
 /// prompt) `.output().await` would hang forever and, with the 5s auto-refresh
 /// polling everything, orphan kubectl processes would pile up. A timeout kills
 /// the child and surfaces a clear error instead.
-const RUN_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const RUN_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct Kubectl {
     binary: String,
@@ -91,21 +91,7 @@ pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::i
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
-    async fn drain(pipe: Option<tokio::process::ChildStdout>) -> Vec<u8> {
-        let Some(mut r) = pipe else { return Vec::new(); };
-        let mut buf = Vec::new();
-        let mut tmp = vec![0u8; 32 * 1024];
-        loop {
-            let n = r.read(&mut tmp).await.unwrap_or(0);
-            if n == 0 { break; }
-            if buf.len() >= MAX_CAPTURE { continue; }
-            let room = MAX_CAPTURE - buf.len();
-            buf.extend_from_slice(&tmp[..n.min(room)]);
-        }
-        buf
-    }
-    async fn drain_err(pipe: Option<tokio::process::ChildStderr>) -> Vec<u8> {
-        let Some(mut r) = pipe else { return Vec::new(); };
+    async fn drain(mut r: impl tokio::io::AsyncRead + Unpin) -> Vec<u8> {
         let mut buf = Vec::new();
         let mut tmp = vec![0u8; 32 * 1024];
         loop {
@@ -118,15 +104,26 @@ pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::i
         buf
     }
 
-    let pending = {
-        let stdout_pipe = stdout_pipe;
-        let stderr_pipe = stderr_pipe;
-        async move { (drain(stdout_pipe).await, drain_err(stderr_pipe).await) }
-    };
+    // Start draining stdout/stderr as background tasks BEFORE waiting on the
+    // child. kubectl output for a large cluster (`get pods --all-namespaces -o
+    // json` on hundreds of pods) far exceeds the OS pipe buffer; if nothing
+    // reads the pipes until after exit, kubectl blocks on write and never
+    // exits → the child would hang until the 60s timeout and every list query
+    // would fail. Draining concurrently keeps the child unblocked.
+    let stdout_task = stdout_pipe.map(|p| tokio::spawn(drain(p)));
+    let stderr_task = stderr_pipe.map(|p| tokio::spawn(drain(p)));
+
+    async fn join(task: Option<tokio::task::JoinHandle<Vec<u8>>>) -> Vec<u8> {
+        match task {
+            Some(t) => t.await.unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
 
     match tokio::time::timeout(timeout, async {
         let status = child.wait().await?;
-        let (stdout_bytes, stderr_bytes) = pending.await;
+        let stdout_bytes = join(stdout_task).await;
+        let stderr_bytes = join(stderr_task).await;
         Ok::<_, std::io::Error>((status, stdout_bytes, stderr_bytes))
     })
     .await

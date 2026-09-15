@@ -24,8 +24,14 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   const unlistenExitRef = useRef<(() => void) | null>(null);
   const termDivRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(true);
+  const connectingRef = useRef(false);
 
   useEffect(() => {
+    // StrictMode (dev) mounts → cleans up → remounts. The cleanup below flips
+    // mountedRef to false, so the remount MUST set it back to true — otherwise
+    // every `handleConnect` aborts at the mountedRef guard and Connect does
+    // nothing. Setting it inside the effect body makes both passes safe.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -72,7 +78,11 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
   }, [connected]);
 
   const handleConnect = async () => {
-    if (!ctxName || connected) return;
+    // `connected` is async state, so rapid double-clicks would both pass this
+    // guard and spawn two kubectl exec processes (the first one's id is then
+    // lost and can never be stopped). A ref-based lock closes that window.
+    if (!ctxName || connected || connectingRef.current) return;
+    connectingRef.current = true;
     setError(null);
     // Reconnecting after a Disconnect: dispose the previous Terminal instance
     // (its DOM was already mounted), otherwise a second open() on the same div
@@ -93,6 +103,7 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
     const cont = effectiveContainer;
     if (!cont) {
       setError('No container available');
+      connectingRef.current = false;
       return;
     }
     const cmd = command.trim().split(/\s+/).filter(Boolean);
@@ -173,6 +184,8 @@ export function ExecTerminal({ pod, ctxName, onClose }: ExecTerminalProps) {
       term.focus();
     } catch (e) {
       if (mountedRef.current) setError(String(e));
+    } finally {
+      connectingRef.current = false;
     }
   };
 

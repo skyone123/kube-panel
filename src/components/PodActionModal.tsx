@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, getSecrets, getSecretData } from '../api/tauri';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, onLogStreamEnd, getSecrets, getSecretData } from '../api/tauri';
 import { HighlightText } from './HighlightText';
 import { ExportButton } from './ExportButton';
 
@@ -364,8 +364,10 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
   const [live, setLive] = useState(true);
   const [events, setEvents] = useState<EventView[]>([]);
   const [onlyThisPod, setOnlyThisPod] = useState(true);
+  const [streamEnded, setStreamEnded] = useState(false);
   const streamIdRef = useRef<string | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const unlistenEndRef = useRef<(() => void) | null>(null);
 
   // Snapshot mode: one-shot query, only enabled when live is off.
   const snapshotQuery = useQuery({
@@ -387,11 +389,15 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
     let cancelled = false;
     const prevId = streamIdRef.current;
     const prevUnlisten = unlistenRef.current;
+    const prevUnlistenEnd = unlistenEndRef.current;
     streamIdRef.current = null;
     unlistenRef.current = null;
+    unlistenEndRef.current = null;
+    setStreamEnded(false);
 
     const teardown = async () => {
       if (prevUnlisten) { try { prevUnlisten(); } catch { /* noop */ } }
+      if (prevUnlistenEnd) { try { prevUnlistenEnd(); } catch { /* noop */ } }
       if (prevId) { try { await stopLogStream(prevId); } catch { /* noop */ } }
     };
     teardown();
@@ -426,8 +432,21 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
           try { await stopLogStream(id); } catch { /* noop */ }
           return;
         }
+        const unlistenEnd = await onLogStreamEnd((e) => {
+          if (e.id !== streamIdRef.current) return;
+          if (!active || cancelled) return;
+          // Watch stream died — tell the user instead of leaving a zombie "Live".
+          streamIdRef.current = null;
+          setStreamEnded(true);
+        });
+        if (!active || cancelled) {
+          try { unlistenEnd(); } catch { /* noop */ }
+          try { await stopLogStream(id); } catch { /* noop */ }
+          return;
+        }
         streamIdRef.current = id;
         unlistenRef.current = unlisten;
+        unlistenEndRef.current = unlistenEnd;
       } catch {
         /* stream start failed — buffer stays empty */
       }
@@ -438,9 +457,12 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
       cancelled = true;
       const id = streamIdRef.current;
       const un = unlistenRef.current;
+      const unEnd = unlistenEndRef.current;
       streamIdRef.current = null;
       unlistenRef.current = null;
+      unlistenEndRef.current = null;
       if (un) { try { un(); } catch { /* noop */ } }
+      if (unEnd) { try { unEnd(); } catch { /* noop */ } }
       if (id) { try { void stopLogStream(id); } catch { /* noop */ } }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -482,6 +504,11 @@ function EventsPanel({ pod, ctxName }: { pod: PodView; ctxName: string }) {
           />
           <span>Only this pod</span>
         </label>
+        {streamEnded && live && (
+          <span className="pf-status-pill failed" title="事件流已断开或结束，点击 Live 重启">
+            stream ended
+          </span>
+        )}
       </div>
       {isLoading ? (
         <div className="pod-modal-loading">Loading events…</div>

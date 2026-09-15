@@ -89,6 +89,15 @@ pub fn run() {
             if let Some(execs) = app_handle.try_state::<ExecRegistry>() {
                 execs.stop_all();
             }
+            // Kill lingering `kubectl port-forward` / `kubectl logs -f` children
+            // too, so they can't keep listening on local ports or streaming
+            // after the window closes.
+            if let Some(pf) = app_handle.try_state::<PfRegistry>() {
+                pf.stop_all();
+            }
+            if let Some(streams) = app_handle.try_state::<StreamRegistry>() {
+                streams.stop_all();
+            }
         }
     });
 }

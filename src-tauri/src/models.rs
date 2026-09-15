@@ -34,9 +34,9 @@ pub struct ContainerState {
     #[serde(default)] pub terminated: Option<TerminatedState>,
 }
 #[derive(Debug, Clone, Deserialize)]
-pub struct WaitingState { pub reason: String }
+pub struct WaitingState { #[serde(default)] pub reason: String }
 #[derive(Debug, Clone, Deserialize)]
-pub struct TerminatedState { pub reason: String }
+pub struct TerminatedState { #[serde(default)] pub reason: String }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NamespaceList { pub items: Vec<NamespaceItem> }
@@ -71,11 +71,13 @@ pub fn parse_pod_list(json: &[u8]) -> std::io::Result<Vec<PodView>> {
         let total = p.spec.containers.len() as i64;
         let ready_count = p.status.containerStatuses.iter().filter(|c| c.ready).count() as i64;
         let restarts: i64 = p.status.containerStatuses.iter().map(|c| c.restartCount).sum();
-        // status: prefer first waiting reason, else terminated reason, else phase
+        // status: prefer first non-empty waiting reason, else terminal reason, else phase
         let status = p.status.containerStatuses.iter()
-            .find_map(|c| c.state.waiting.as_ref().map(|w| w.reason.clone()))
+            .filter_map(|c| c.state.waiting.as_ref().map(|w| w.reason.clone()))
+            .find(|r| !r.is_empty())
             .or_else(|| p.status.containerStatuses.iter()
-                .find_map(|c| c.state.terminated.as_ref().map(|t| t.reason.clone())))
+                .filter_map(|c| c.state.terminated.as_ref().map(|t| t.reason.clone()))
+                .find(|r| !r.is_empty()))
             .unwrap_or(p.status.phase.clone());
         let age = age_string(&p.metadata.creationTimestamp, now);
         let containers = p.spec.containers.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
@@ -1233,5 +1235,25 @@ mod tests {
         let view = parse_resources(json, "unknownkind").unwrap();
         assert!(view.columns.is_empty());
         assert!(view.rows.is_empty());
+    }
+
+    #[test]
+    fn parses_pod_with_empty_waiting_state_does_not_fail() {
+        // ContainerState.waiting can legitimately be an empty object `{}`
+        // (no `reason`). Previously the missing field killed the whole pod
+        // list parse.
+        let json = br#"{
+            "items": [
+                {"metadata":{"name":"w","namespace":"default","creationTimestamp":"2024-01-01T00:00:00Z"},
+                 "spec":{"containers":[{"name":"c"}],"nodeName":"node-1"},
+                 "status":{"phase":"Running","podIP":"10.0.0.1","containerStatuses":[
+                    {"name":"c","restartCount":0,"ready":false,"state":{"waiting":{}}}
+                 ]}}
+            ]
+        }"#;
+        let views = parse_pod_list(json).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].name, "w");
+        assert_eq!(views[0].status, "Running", "empty waiting state should fall back to phase");
     }
 }

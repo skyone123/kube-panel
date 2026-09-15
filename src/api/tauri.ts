@@ -78,6 +78,15 @@ export function onLogChunk(cb: (chunk: LogChunk) => void): Promise<UnlistenFn> {
   return listen<LogChunk>('log_chunk', (e) => cb(e.payload));
 }
 
+export type LogStreamEnd = { id: string };
+
+// Subscribe to log_stream_end events; emitted exactly once when a log / event /
+// merged stream fully ends (stdout EOF'd or all children exited) so the UI can
+// stop pretending the stream is still live.
+export function onLogStreamEnd(cb: (e: LogStreamEnd) => void): Promise<UnlistenFn> {
+  return listen<LogStreamEnd>('log_stream_end', (e) => cb(e.payload));
+}
+
 // Deployment + rollout operations
 export const getDeployments = (context: string, namespace: string) =>
   invoke<DeploymentView[]>('get_deployments', { context, namespace });

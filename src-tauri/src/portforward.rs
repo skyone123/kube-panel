@@ -190,6 +190,24 @@ impl PfRegistry {
         }
     }
 
+    /// Best-effort stop of every live port-forward session. Called on app exit:
+    /// signals each monitor task to kill + reap its child, so a `kubectl
+    /// port-forward` can't linger and keep listening on the local port after
+    /// the window closes. (Each child also has kill_on_drop set, so dropping
+    /// its Child on runtime shutdown is the belt-and-suspenders kill.)
+    pub fn stop_all(&self) {
+        let mut map = self.sessions.lock().unwrap();
+        let ids: Vec<String> = map.keys().cloned().collect();
+        for id in ids {
+            if let Some(entry) = map.get_mut(&id) {
+                entry.user_stopping = true;
+                if let Some(tx) = entry.stop_tx.take() {
+                    let _ = tx.send(true);
+                }
+            }
+        }
+    }
+
     pub fn len(&self) -> usize { self.sessions.lock().unwrap().len() }
 }
 

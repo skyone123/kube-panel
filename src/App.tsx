@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { PodTable } from './components/PodTable';
@@ -15,7 +15,7 @@ import { RolloutModal } from './components/RolloutModal';
 import { PortForwardPanel } from './components/PortForwardPanel';
 import { ResourceBrowser } from './components/ResourceBrowser';
 import { useAppStore } from './stores/appStore';
-import { getPods, getDeployments, getNodes, listContexts, listHistory, streamMultiPodLogs } from './api/tauri';
+import { getPods, getDeployments, getNodes, listContexts, listHistory, streamMultiPodLogs, stopLogStream } from './api/tauri';
 import type { PodView, PodActionMode, DeploymentView, RolloutMode, NodeView } from './types';
 import './App.css';
 
@@ -42,12 +42,25 @@ export default function App() {
   const ctxName = contexts.find(c => c.current)?.name ?? '';
   const current = contexts.find(c => c.current) ?? null;
 
+  // Latest merge snapshot so the context-change effect can stop the running
+  // multi-pod tail without depending on (stale) closure state.
+  const mergeRef = useRef(merge);
+  mergeRef.current = merge;
+
   // When the active context changes, clear the pod selection & single-pod
   // modals that reference pods from the old context (log stream would keep
-  // pointing at a stale pod otherwise).
+  // pointing at a stale pod otherwise). Also stop the multi-pod merged tail —
+  // it was launched against the OLD context's pods and would otherwise keep
+  // streaming stale lines after the switch.
   useEffect(() => {
     setSelectedPod(null);
     setPodAction(null);
+    if (!ctxName) return;
+    const m = mergeRef.current;
+    if (m) {
+      try { void stopLogStream(m.id); } catch { /* noop */ }
+      setMerge(null);
+    }
   }, [ctxName]);
   const { data: pods = [] } = useQuery({
     queryKey: ['pods', ctxName, namespace],

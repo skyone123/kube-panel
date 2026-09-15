@@ -158,18 +158,43 @@ pub async fn export_pod_logs(
             String::from_utf8_lossy(&kept).into_owned()
         }));
     }
-    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = stdout.read(&mut buf).await.map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-    }
-    drop(stdout);
 
-    let exit = child.wait().await.map_err(|e| e.to_string())?;
+    // Unlike the one-shot `Kubectl::run`, this path spawns the child manually, so
+    // it must enforce its OWN timeout — otherwise a hung apiserver makes
+    // `kubectl logs` block forever with no cancellation path (the save dialog is
+    // already closed). On timeout the child is killed + reaped and the partial
+    // file is removed.
+    let timeout = crate::kubectl::RUN_TIMEOUT;
+    let copy_result = tokio::time::timeout(timeout, async {
+        let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = stdout.read(&mut buf).await.map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        }
+        drop(stdout);
+        let exit = child.wait().await.map_err(|e| e.to_string())?;
+        Ok::<_, String>(exit)
+    }).await;
+
+    let exit = match copy_result {
+        Ok(Ok(exit)) => exit,
+        Ok(Err(e)) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let _ = std::fs::remove_file(&path);
+            return Err(e);
+        }
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let _ = std::fs::remove_file(&path);
+            return Err(format!("export timed out after {timeout:?}"));
+        }
+    };
     let err_msg = match stderr_task {
         Some(task) => task.await.unwrap_or_default(),
         None => String::new(),
@@ -241,6 +266,15 @@ pub struct LogChunk {
     pub text: String,
 }
 
+/// Emitted once when a log/event/merged stream fully ends (stdout EOF'd or all
+/// children exited), via the `log_stream_end` event. The frontend uses this to
+/// flip the `running` indicator off and tell the user the stream is gone —
+/// without it a killed or disconnected `kubectl logs -f` looks alive forever.
+#[derive(serde::Serialize, Clone)]
+pub struct LogStreamEnd {
+    pub id: String,
+}
+
 /// Start a `kubectl logs -f` stream. Returns the stream id. Log chunks are emitted
 /// to the frontend as `log_chunk` events `{ id, text }`. The stream stays alive
 /// until the child exits (EOF) or `stop_log_stream` is called.
@@ -294,8 +328,12 @@ pub async fn stream_pod_logs(
     // pre-allocate the id so the emit closure can capture it before `start` returns
     let id = crate::stream::new_id();
     let id_for_emit = id.clone();
+    let app_emit = app.clone();
+    let app_end = app.clone();
     let id_ret = registry.start(id.clone(), child, move |text| {
-        let _ = app.emit("log_chunk", LogChunk { id: id_for_emit.clone(), text });
+        let _ = app_emit.emit("log_chunk", LogChunk { id: id_for_emit.clone(), text });
+    }, move |sid| {
+        let _ = app_end.emit("log_stream_end", LogStreamEnd { id: sid });
     });
     debug_assert_eq!(id_ret, id, "StreamRegistry::start must echo the caller-supplied id");
     Ok(id)
@@ -344,12 +382,16 @@ pub async fn stream_events(
 
     let id = crate::stream::new_id();
     let id_for_emit = id.clone();
+    let app_emit = app.clone();
+    let app_end = app.clone();
     let id_ret = registry.start(id, child, move |text| {
         // Each `text` is one NDJSON line (StreamRegistry reads line-by-line).
         // Skip partial/empty lines silently.
         if let Ok(event) = crate::models::parse_watch_event_line(text.as_bytes()) {
-            let _ = app.emit("event_chunk", EventChunk { id: id_for_emit.clone(), event });
+            let _ = app_emit.emit("event_chunk", EventChunk { id: id_for_emit.clone(), event });
         }
+    }, move |sid| {
+        let _ = app_end.emit("log_stream_end", LogStreamEnd { id: sid });
     });
     Ok(id_ret)
 }
@@ -428,8 +470,12 @@ pub async fn stream_multi_pod_logs(
 
     let merge_id = crate::stream::new_id();
     let mid = merge_id.clone();
+    let app_emit = app.clone();
+    let app_end = app.clone();
     let id_ret = registry.start_multi(merge_id, children, move |text| {
-        let _ = app.emit("log_chunk", LogChunk { id: mid.clone(), text });
+        let _ = app_emit.emit("log_chunk", LogChunk { id: mid.clone(), text });
+    }, move |sid| {
+        let _ = app_end.emit("log_stream_end", LogStreamEnd { id: sid });
     });
     Ok(id_ret)
 }
@@ -632,8 +678,20 @@ pub async fn start_port_forward(
     history: State<'_, History>,
     app: AppHandle,
 ) -> Result<String, String> {
+    // free-text field — reject anything kubectl would parse as a flag, plus
+    // leaf/port values that can't be valid (mirrors the frontend validation).
+    let target = target.trim();
+    if target.is_empty() || target.starts_with('-') {
+        return Err("invalid port-forward target".into());
+    }
+    if !target.contains('/') {
+        return Err("port-forward target must be resource/name (e.g. pod/foo, svc/bar)".into());
+    }
+    if local_port == 0 || remote_port == 0 {
+        return Err("ports must be between 1 and 65535".into());
+    }
     let port_arg = format!("{}:{}", local_port, remote_port);
-    let args: Vec<String> = vec!["port-forward".into(), target.clone(), port_arg.clone()];
+    let args: Vec<String> = vec!["port-forward".into(), target.to_string(), port_arg.clone()];
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
     let mut cmd = rt.build_cmd(&context, ns_opt, &arg_refs);
@@ -643,7 +701,7 @@ pub async fn start_port_forward(
     let child = cmd.spawn().map_err(|e| e.to_string())?;
 
     // Record ONE history row (is_stream=true, exit_code=None).
-    let hist_argv: Vec<&str> = vec!["port-forward", &target, &port_arg];
+    let hist_argv: Vec<&str> = vec!["port-forward", target, &port_arg];
     let entry = build_history_entry(&context, ns_opt, &hist_argv, None, 0, true);
     if let Err(e) = history.insert(&entry) {
         eprintln!("[kube-panel] history insert failed for pf: {e}");
@@ -654,7 +712,7 @@ pub async fn start_port_forward(
         id: id.clone(),
         context: context.clone(),
         namespace: namespace.clone(),
-        target: target.clone(),
+        target: target.to_string(),
         local_port,
         remote_port,
         started_at: chrono::Utc::now().timestamp_millis(),

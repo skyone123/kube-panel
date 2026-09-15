@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getPodLogs, listContexts, streamPodLogs, stopLogStream, onLogChunk, exportPodLogs, type LogChunk } from '../api/tauri';
+import { getPodLogs, listContexts, streamPodLogs, stopLogStream, onLogChunk, onLogStreamEnd, exportPodLogs, type LogChunk } from '../api/tauri';
 import type { PodView } from '../types';
 
 const MAX_LINES = 5000;
@@ -39,6 +39,7 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
   const currentLineRef = useRef<HTMLDivElement | null>(null);
   const streamIdRef = useRef<string | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const unlistenEndRef = useRef<(() => void) | null>(null);
 
   // Streaming / one-shot lifecycle. Re-runs when any dependency changes.
   useEffect(() => {
@@ -46,12 +47,15 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
     let cancelled = false;
     const prevId = streamIdRef.current;
     const prevUnlisten = unlistenRef.current;
+    const prevUnlistenEnd = unlistenEndRef.current;
     streamIdRef.current = null;
     unlistenRef.current = null;
+    unlistenEndRef.current = null;
     setRunning(false);
 
     const teardown = async () => {
       if (prevUnlisten) { try { prevUnlisten(); } catch { /* noop */ } }
+      if (prevUnlistenEnd) { try { prevUnlistenEnd(); } catch { /* noop */ } }
       if (prevId) { try { await stopLogStream(prevId); } catch { /* noop */ } }
     };
     teardown();
@@ -92,8 +96,24 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
             try { await stopLogStream(id); } catch { /* noop */ }
             return;
           }
+          const unlistenEnd = await onLogStreamEnd((e) => {
+            if (e.id !== streamIdRef.current) return;
+            if (!active || cancelled) return;
+            // Stream really died (kubectl exited / disconnected) — stop
+            // pretending it is live: clear the id so late chunks are dropped,
+            // flip running off, and tell the user.
+            streamIdRef.current = null;
+            setRunning(false);
+            setLines(prev => [...prev, '[stream ended]\n']);
+          });
+          if (!active || cancelled) {
+            try { unlistenEnd(); } catch { /* noop */ }
+            try { await stopLogStream(id); } catch { /* noop */ }
+            return;
+          }
           streamIdRef.current = id;
           unlistenRef.current = unlisten;
+          unlistenEndRef.current = unlistenEnd;
           setRunning(true);
         } catch {
           setRunning(false);
@@ -105,10 +125,13 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
         cancelled = true;
         const id = streamIdRef.current;
         const un = unlistenRef.current;
+        const unEnd = unlistenEndRef.current;
         streamIdRef.current = null;
         unlistenRef.current = null;
+        unlistenEndRef.current = null;
         setRunning(false);
         if (un) { try { un(); } catch { /* noop */ } }
+        if (unEnd) { try { unEnd(); } catch { /* noop */ } }
         if (id) { try { void stopLogStream(id); } catch { /* noop */ } }
       };
     } else {
@@ -137,7 +160,11 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
   // Flatten the chunk buffer into individual display lines.
   const displayLines = useMemo(() => {
     if (lines.length === 0) return [];
-    return lines.join('').split('\n');
+    const parts = lines.join('').split('\n');
+    // Every chunk ends with '\n', so splitting always yields a trailing empty
+    // string that would render as a phantom blank line.
+    if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+    return parts;
   }, [lines]);
 
   // Compile the user's search string into a global regex (for highlighting)
@@ -195,10 +222,13 @@ export function LogViewer({ pod }: { pod: PodView | null }) {
   const handleStop = () => {
     const id = streamIdRef.current;
     const un = unlistenRef.current;
+    const unEnd = unlistenEndRef.current;
     streamIdRef.current = null;
     unlistenRef.current = null;
+    unlistenEndRef.current = null;
     setRunning(false);
     if (un) { try { un(); } catch { /* noop */ } }
+    if (unEnd) { try { unEnd(); } catch { /* noop */ } }
     if (id) { try { void stopLogStream(id); } catch { /* noop */ } }
   };
 

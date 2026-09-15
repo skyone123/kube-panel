@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { onLogChunk, stopLogStream, type LogChunk } from '../api/tauri';
+import { onLogChunk, onLogStreamEnd, stopLogStream, type LogChunk } from '../api/tauri';
 import { ExportButton } from './ExportButton';
 
 const MAX_LINES = 5000;
@@ -22,6 +22,7 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const currentLineRef = useRef<HTMLDivElement | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const unlistenEndRef = useRef<(() => void) | null>(null);
 
   // Stopping is idempotent (cheap & async) — called by Stop/Esc.
   const stopStream = () => {
@@ -38,6 +39,7 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   useEffect(() => {
     let cancelled = false;
     let un: (() => void) | null = null;
+    let unEnd: (() => void) | null = null;
     (async () => {
       const ul = await onLogChunk((chunk: LogChunk) => {
         if (chunk.id !== mergeId) return;
@@ -55,12 +57,24 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
       }
       un = ul;
       unlistenRef.current = ul;
+      const ue = await onLogStreamEnd((e) => {
+        if (e.id !== mergeId) return;
+        setLines(prev => [...prev, '[stream ended]\n']);
+      });
+      if (cancelled) {
+        try { ue(); } catch { /* noop */ }
+        return;
+      }
+      unEnd = ue;
+      unlistenEndRef.current = ue;
     })();
 
     return () => {
       cancelled = true;
       if (un) { try { un(); } catch { /* noop */ } }
+      if (unEnd) { try { unEnd(); } catch { /* noop */ } }
       unlistenRef.current = null;
+      unlistenEndRef.current = null;
     };
   }, [mergeId]);
 
@@ -80,7 +94,11 @@ export function MergedLogViewer({ mergeId, podNames, onClose }: MergedLogViewerP
   // Flatten chunk buffer into display lines.
   const displayLines = useMemo(() => {
     if (lines.length === 0) return [];
-    return lines.join('').split('\n');
+    const parts = lines.join('').split('\n');
+    // Every chunk ends with '\n', so splitting always yields a trailing empty
+    // string that would render as a phantom blank line.
+    if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+    return parts;
   }, [lines]);
 
   // Compile search regex.
