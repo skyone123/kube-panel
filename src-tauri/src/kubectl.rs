@@ -76,8 +76,14 @@ impl Kubectl {
 pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<RunResult> {
     // Cap captured output: a pathological `-o json` or unfollowed `logs` on a
     // chatty pod can return far more than we ever render, and buffering it all
-    // would balloon memory. We keep only the first 8 MiB of each stream.
-    const MAX_CAPTURE: usize = 8 * 1024 * 1024;
+    // would balloon memory. Large clusters legitimately exceed a few MiB per
+    // list (`get pods --all-namespaces -o json` on ~500 pods ≈ 8 MiB, and a
+    // 5k-pod cluster ≈ 75 MiB), so the ceiling must be generous — otherwise an
+    // 8 MiB cut silently hands callers a TRUNCATED stdout whose JSON parser
+    // dies with a baffling "EOF while parsing a list" and the pod table shows
+    // empty. We keep the first `MAX_CAPTURE` bytes and flag truncation so the
+    // caller gets a clear error instead of garbage.
+    const MAX_CAPTURE: usize = 256 * 1024 * 1024;
 
     // Pipe stdout/stderr explicitly (like Command::output does) so the reader
     // tasks own the handles and nothing leaks to the parent's console.
@@ -91,17 +97,25 @@ pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::i
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
-    async fn drain(mut r: impl tokio::io::AsyncRead + Unpin) -> Vec<u8> {
+    /// Drain a pipe into a bounded buffer. Returns the bytes and whether the
+    /// stream hit `MAX_CAPTURE` (i.e. output was truncated).
+    async fn drain(mut r: impl tokio::io::AsyncRead + Unpin) -> (Vec<u8>, bool) {
         let mut buf = Vec::new();
         let mut tmp = vec![0u8; 32 * 1024];
+        let mut truncated = false;
         loop {
             let n = r.read(&mut tmp).await.unwrap_or(0);
             if n == 0 { break; }
-            if buf.len() >= MAX_CAPTURE { continue; }
+            if buf.len() >= MAX_CAPTURE {
+                // Keep draining until EOF so the child never blocks on a full
+                // pipe, but remember that we had to drop bytes.
+                truncated = true;
+                continue;
+            }
             let room = MAX_CAPTURE - buf.len();
             buf.extend_from_slice(&tmp[..n.min(room)]);
         }
-        buf
+        (buf, truncated)
     }
 
     // Start draining stdout/stderr as background tasks BEFORE waiting on the
@@ -113,26 +127,38 @@ pub async fn run_cmd_with_timeout(mut cmd: Command, timeout: Duration) -> std::i
     let stdout_task = stdout_pipe.map(|p| tokio::spawn(drain(p)));
     let stderr_task = stderr_pipe.map(|p| tokio::spawn(drain(p)));
 
-    async fn join(task: Option<tokio::task::JoinHandle<Vec<u8>>>) -> Vec<u8> {
+    async fn join(task: Option<tokio::task::JoinHandle<(Vec<u8>, bool)>>) -> (Vec<u8>, bool) {
         match task {
             Some(t) => t.await.unwrap_or_default(),
-            None => Vec::new(),
+            None => (Vec::new(), false),
         }
     }
 
     match tokio::time::timeout(timeout, async {
         let status = child.wait().await?;
-        let stdout_bytes = join(stdout_task).await;
-        let stderr_bytes = join(stderr_task).await;
-        Ok::<_, std::io::Error>((status, stdout_bytes, stderr_bytes))
+        let (stdout_bytes, stdout_truncated) = join(stdout_task).await;
+        let (stderr_bytes, stderr_truncated) = join(stderr_task).await;
+        Ok::<_, std::io::Error>((status, stdout_bytes, stderr_bytes, stdout_truncated, stderr_truncated))
     })
     .await
     {
-        Ok(Ok((status, stdout_bytes, stderr_bytes))) => Ok(RunResult {
-            exit_code: status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
-        }),
+        Ok(Ok((status, stdout_bytes, stderr_bytes, stdout_truncated, stderr_truncated))) => {
+            // Truncated stdout would corrupt anything downstream that parses it
+            // (pod/namespace/event JSON lists), so surface a clear error instead
+            // of letting the parser fail with a cryptic message.
+            if stdout_truncated {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("kubectl stdout exceeded the {} MiB capture limit; refusing to use truncated output", MAX_CAPTURE / (1024 * 1024)),
+                ));
+            }
+            let _ = stderr_truncated; // stderr is surfaced in full where possible
+            Ok(RunResult {
+                exit_code: status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+            })
+        }
         Ok(Err(e)) => Err(e),
         Err(_) => {
             let _ = child.kill().await;
@@ -178,5 +204,31 @@ mod tests {
         assert!(!args.iter().any(|a| a == "--kubeconfig"));
         assert!(args.windows(2).any(|w| w[0] == "--context" && w[1] == "prod"));
         assert!(!args.windows(2).any(|w| w[0] == "-n"));
+    }
+
+    /// Regressions guard: a large stdout (e.g. `get pods --all-namespaces -o
+    /// json` on a big cluster) must come back COMPLETE. Before this fix the
+    /// 8 MiB cap silently truncated the buffer, so JSON parsers downstream died
+    /// with "EOF while parsing a list" and the pod table rendered empty.
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn large_stdout_is_not_truncated() {
+        // 14_000 lines x 700 chars ≈ 9.8 MiB stdout (> legacy 8 MiB cap).
+        let mut cmd = tokio::process::Command::new("powershell");
+        cmd.args([
+            "-NoProfile", "-Command",
+            "1..14000 | ForEach-Object { 'A' * 700 }",
+        ]);
+        let res = run_cmd_with_timeout(cmd, Duration::from_secs(30)).await
+            .expect("run_cmd_with_timeout should succeed");
+        assert!(
+            res.stdout.len() > 8 * 1024 * 1024,
+            "stdout should exceed the old 8 MiB cap, got {} bytes",
+            res.stdout.len()
+        );
+        assert!(
+            res.stdout.ends_with("AAAA\n") || res.stdout.len() >= 700 * 14000,
+            "stdout appears truncated"
+        );
     }
 }
