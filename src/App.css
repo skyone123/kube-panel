@@ -534,6 +534,25 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   font-size: 12.5px;
 }
 
+.pod-empty.error {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  word-break: break-all;
+}
+
+.pod-err-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  word-break: break-all;
+}
+
 /* ---------- Node table extras ---------- */
 .role-pill {
   display: inline-block;

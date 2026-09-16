@@ -12,6 +12,7 @@ interface PodTableProps {
   onPodAction?: (pod: PodView, mode: PodActionMode) => void;
   onMergeTail?: (pods: PodView[]) => void;
   onPortForward?: (pod: PodView) => void;
+  error?: string | null;
 }
 
 function statusClass(status: string): 'status-error' | 'status-ok' | 'status-warn' {
@@ -26,7 +27,7 @@ function statusPill(status: string) {
   return <span className="status-pill warn">{status}</span>;
 }
 
-export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail, onPortForward }: PodTableProps) {
+export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail, onPortForward, error }: PodTableProps) {
   const q = query.trim().toLowerCase();
   const shown = q
     ? pods.filter(p =>
@@ -106,6 +107,13 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
   const selectedPods = pods.filter(p => multiSel.has(`${p.namespace}/${p.name}`));
 
   if (shown.length === 0) {
+    if (error) {
+      return (
+        <div className="pod-empty error" title="kubectl 查询失败，下方为具体原因">
+          Error: {error}
+        </div>
+      );
+    }
     return (
       <div className="pod-empty">
         {pods.length === 0 ? 'No pods in this namespace.' : 'No pods match your filter.'}
@@ -115,6 +123,11 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
 
   return (
     <>
+      {error && (
+        <div className="pod-err-banner" title="kubectl 查询失败，下方为具体原因">
+          Pod list refresh failed: {error}
+        </div>
+      )}
       {multiSel.size >= 2 && (
         <div className="pod-multi-bar">
           <button

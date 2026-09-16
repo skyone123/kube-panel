@@ -62,7 +62,7 @@ export default function App() {
       setMerge(null);
     }
   }, [ctxName]);
-  const { data: pods = [] } = useQuery({
+  const { data: pods = [], error: podsError } = useQuery({
     queryKey: ['pods', ctxName, namespace],
     queryFn: () => getPods(ctxName, namespace),
     enabled: !!ctxName,
@@ -86,6 +86,11 @@ export default function App() {
   const deployCount = deployments.length;
   const nodeCount = nodes.length;
   const histCount = history.length;
+  const podErrMsg = podsError == null
+    ? null
+    : (typeof podsError === 'string'
+        ? podsError
+        : (podsError instanceof Error ? podsError.message : String(podsError)));
 
   return (
     <div className="app-shell">
@@ -158,7 +163,7 @@ export default function App() {
             </div>
             <div className="pod-table-wrap">
               {resourceTab === 'pods' ? (
-                <PodTable pods={pods} query={q} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onPortForward={(pod) => { setPfTarget(`pod/${pod.name}`); setShowPf(true); }} onMergeTail={async (pods) => {
+                <PodTable pods={pods} query={q} error={podErrMsg} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onPortForward={(pod) => { setPfTarget(`pod/${pod.name}`); setShowPf(true); }} onMergeTail={async (pods) => {
                   try {
                     const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
                     const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);
