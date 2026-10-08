@@ -160,4 +160,92 @@ describe('PodTable', () => {
     expect((rowCheckboxes[0] as HTMLInputElement).checked).toBe(false);
     expect((rowCheckboxes[1] as HTMLInputElement).checked).toBe(false);
   });
+
+  // ---- status filter -------------------------------------------------------
+
+  it('filters pods by a single status', () => {
+    render(<PodTable pods={pods} query="" statusFilter={['CrashLoopBackOff']} />);
+    expect(screen.getByText('crashy')).toBeInTheDocument();
+    expect(screen.queryByText('nginx')).not.toBeInTheDocument();
+  });
+
+  it('treats several selected statuses as a union and hides the rest', () => {
+    // The shared fixture has exactly one pod per status, so a union assertion
+    // over it would also pass with the status filter ignored. Add a third,
+    // unselected status so this test can actually fail.
+    const mixed: PodView[] = [...pods, { ...pods[0], name: 'idle', status: 'Pending' }];
+    render(<PodTable pods={mixed} query="" statusFilter={['CrashLoopBackOff', 'Running']} />);
+    expect(screen.getByText('crashy')).toBeInTheDocument();
+    expect(screen.getByText('nginx')).toBeInTheDocument();
+    expect(screen.queryByText('idle')).not.toBeInTheDocument();
+  });
+
+  it('shows every pod when no status is selected', () => {
+    render(<PodTable pods={pods} query="" statusFilter={[]} />);
+    expect(screen.getByText('crashy')).toBeInTheDocument();
+    expect(screen.getByText('nginx')).toBeInTheDocument();
+  });
+
+  it('ANDs the status filter with the text query', () => {
+    render(<PodTable pods={pods} query="nginx" statusFilter={['CrashLoopBackOff']} />);
+    expect(screen.getByText('No pods match your filter.')).toBeInTheDocument();
+  });
+
+  it('shows the no-match empty state when the status filter excludes every pod', () => {
+    render(<PodTable pods={pods} query="" statusFilter={['Pending']} />);
+    expect(screen.getByText('No pods match your filter.')).toBeInTheDocument();
+  });
+
+  it('keeps a selection hidden by a filter and reports how many are hidden', () => {
+    const onMergeTail = vi.fn();
+    const { rerender } = render(
+      <PodTable pods={pods} query="" statusFilter={[]} onMergeTail={onMergeTail} />,
+    );
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select nginx/ })[0]);
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select crashy/ })[0]);
+    expect(screen.getByText('Tail 2 pods')).toBeInTheDocument();
+
+    // Filtering is a view concern: crashy stays selected, and the bar says so
+    // instead of silently shrinking the selection.
+    rerender(<PodTable pods={pods} query="" statusFilter={['Running']} onMergeTail={onMergeTail} />);
+    expect(screen.queryByText('crashy')).not.toBeInTheDocument();
+    expect(screen.getByText('Tail 2 pods (1 hidden)')).toBeInTheDocument();
+
+    // The merge still targets both selected pods, not just the visible one.
+    fireEvent.click(screen.getByText('Tail 2 pods (1 hidden)'));
+    expect(onMergeTail).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'nginx' }),
+        expect.objectContaining({ name: 'crashy' }),
+      ]),
+    );
+  });
+
+  it('still prunes selected pods that disappear from the cluster', () => {
+    const onMergeTail = vi.fn();
+    const { rerender } = render(
+      <PodTable pods={pods} query="" statusFilter={[]} onMergeTail={onMergeTail} />,
+    );
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select nginx/ })[0]);
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select crashy/ })[0]);
+    expect(screen.getByText('Tail 2 pods')).toBeInTheDocument();
+
+    // crashy is gone entirely (namespace switch / refresh removed it), so the
+    // selection must not keep a stale key alive.
+    rerender(<PodTable pods={[pods[0]]} query="" statusFilter={[]} onMergeTail={onMergeTail} />);
+    expect(screen.queryByText(/Tail \d+ pods/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the selection bar reachable when a filter hides every pod', () => {
+    const { rerender } = render(
+      <PodTable pods={pods} query="" statusFilter={[]} onMergeTail={vi.fn()} />,
+    );
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select nginx/ })[0]);
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /Select crashy/ })[0]);
+
+    rerender(<PodTable pods={pods} query="" statusFilter={['Pending']} onMergeTail={vi.fn()} />);
+    expect(screen.getByText('No pods match your filter.')).toBeInTheDocument();
+    // The bar is the only way to see or clear the selection in this state.
+    expect(screen.getByText('Tail 2 pods (2 hidden)')).toBeInTheDocument();
+  });
 });

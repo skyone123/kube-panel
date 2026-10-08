@@ -34,7 +34,7 @@ deployments + rollout、实时 port-forward 管理，一个桌面应用搞定。
 | 领域 | 你能得到什么 |
 | :--- | :--- |
 | 🧭 **上下文与命名空间** | 离线解析 `~/.kube/config` + `KUBECONFIG`；一键切上下文；默认 all-namespaces 视图，任何 pod 都找得到。 |
-| 📋 **Pod** | 子串过滤（名/命名空间/node）、状态色 pill、高重启高亮、**右键 → 镜像 / ConfigMap / describe / events / YAML**。 |
+| 📋 **Pod** | 子串过滤（名/命名空间/node）、**状态筛选（多选、带各状态数量、异常优先排序）**、状态色 pill、高重启高亮、**右键 → 镜像 / ConfigMap / describe / events / YAML**。 |
 | 🖥️ **Node** | Node 表，**Ready / 压力状态（Memory/PID/Disk）/ 角色 / 版本 / OS**、可分配摘要、自动刷新、右键 describe。 |
 | 📜 **日志** | 流式 `kubectl logs -f`（环形缓冲、follow tail、`--previous`/`--since`/`--tail`、容器下拉）、**全屏**、**正则搜索**带上一个/下一个 + 匹配计数、**导出 `.log`**。 |
 | 🔀 **多 pod tail** | 选 ≥2 个 pod → 合并到一个流，带 `[pod]` 前缀。 |

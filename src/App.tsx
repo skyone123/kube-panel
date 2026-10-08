@@ -14,6 +14,8 @@ import { ExecTerminal } from './components/ExecTerminal';
 import { RolloutModal } from './components/RolloutModal';
 import { PortForwardPanel } from './components/PortForwardPanel';
 import { ResourceBrowser } from './components/ResourceBrowser';
+import { StatusFilter } from './components/StatusFilter';
+import { filterPods, statusOptions } from './components/podStatus';
 import { useAppStore } from './stores/appStore';
 import { getPods, getDeployments, getNodes, listContexts, listHistory, streamMultiPodLogs, stopLogStream } from './api/tauri';
 import type { PodView, PodActionMode, DeploymentView, RolloutMode, NodeView } from './types';
@@ -22,6 +24,9 @@ import './App.css';
 export default function App() {
   const { namespace } = useAppStore();
   const [q, setQ] = useState('');
+  // Status multi-select for the pods list; empty = every status. Kept across
+  // context/namespace switches like `q` — it is a view filter, not data.
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [selectedPod, setSelectedPod] = useState<PodView | null>(null);
   const [histQuery, setHistQuery] = useState('');
   const [podAction, setPodAction] = useState<{ pod: PodView; mode: PodActionMode } | null>(null);
@@ -86,6 +91,11 @@ export default function App() {
   const deployCount = deployments.length;
   const nodeCount = nodes.length;
   const histCount = history.length;
+  // Same helper PodTable uses, so the header count can never disagree with the
+  // rows actually rendered.
+  const statusOpts = statusOptions(pods);
+  const shownPodCount = filterPods(pods, q, statusFilter).length;
+  const podsNarrowed = shownPodCount !== podCount;
   const podErrMsg = podsError == null
     ? null
     : (typeof podsError === 'string'
@@ -148,6 +158,16 @@ export default function App() {
                   title="浏览其他资源类型（Service、Ingress、PVC 等）"
                 >More</button>
               </div>
+              {/* Also rendered for an empty pod list while a filter is still
+                  applied, otherwise switching to an empty namespace would
+                  leave a filter on with no control to clear it. */}
+              {resourceTab === 'pods' && (podCount > 0 || statusFilter.length > 0) && (
+                <StatusFilter
+                  options={statusOpts}
+                  selected={statusFilter}
+                  onChange={setStatusFilter}
+                />
+              )}
               <button
                 className={`live-toggle${live ? ' live' : ' paused'}`}
                 onClick={() => setLive(v => !v)}
@@ -157,13 +177,13 @@ export default function App() {
                 {live ? 'Live' : 'Paused'}
               </button>
               <span className="head-meta">
-                {resourceTab === 'pods' ? `${podCount} running` : resourceTab === 'deployments' ? `${deployCount} deployments` : resourceTab === 'nodes' ? `${nodeCount} nodes` : 'Browse resources'}
+                {resourceTab === 'pods' ? `${podsNarrowed ? `${shownPodCount} / ` : ''}${podCount} pods` : resourceTab === 'deployments' ? `${deployCount} deployments` : resourceTab === 'nodes' ? `${nodeCount} nodes` : 'Browse resources'}
               </span>
               <span className="spacer" />
             </div>
             <div className="pod-table-wrap">
               {resourceTab === 'pods' ? (
-                <PodTable pods={pods} query={q} error={podErrMsg} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onPortForward={(pod) => { setPfTarget(`pod/${pod.name}`); setShowPf(true); }} onMergeTail={async (pods) => {
+                <PodTable pods={pods} query={q} statusFilter={statusFilter} error={podErrMsg} onSelect={setSelectedPod} selected={selectedPod} onPodAction={(pod, mode) => setPodAction({ pod, mode })} onPortForward={(pod) => { setPfTarget(`pod/${pod.name}`); setShowPf(true); }} onMergeTail={async (pods) => {
                   try {
                     const targets = pods.map(p => ({ namespace: p.namespace, pod: p.name, container: null }));
                     const id = await streamMultiPodLogs(ctxName, targets, false, 1000, null);

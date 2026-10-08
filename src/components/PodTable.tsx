@@ -1,23 +1,19 @@
 import { useEffect, useState } from 'react';
 import type { PodView, PodActionMode } from '../types';
 import { useContextMenu } from './useContextMenu';
-
-const BAD = new Set(['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'Error']);
+import { filterPods, statusClass } from './podStatus';
 
 interface PodTableProps {
   pods: PodView[];
   query: string;
+  /** Selected statuses; empty or omitted means "all statuses". */
+  statusFilter?: string[];
   onSelect?: (pod: PodView) => void;
   selected?: PodView | null;
   onPodAction?: (pod: PodView, mode: PodActionMode) => void;
   onMergeTail?: (pods: PodView[]) => void;
   onPortForward?: (pod: PodView) => void;
   error?: string | null;
-}
-
-function statusClass(status: string): 'status-error' | 'status-ok' | 'status-warn' {
-  if (BAD.has(status)) return 'status-error';
-  return status === 'Running' ? 'status-ok' : 'status-warn';
 }
 
 function statusPill(status: string) {
@@ -27,25 +23,22 @@ function statusPill(status: string) {
   return <span className="status-pill warn">{status}</span>;
 }
 
-export function PodTable({ pods, query, onSelect, selected, onPodAction, onMergeTail, onPortForward, error }: PodTableProps) {
-  const q = query.trim().toLowerCase();
-  const shown = q
-    ? pods.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.namespace.toLowerCase().includes(q) ||
-        p.node.toLowerCase().includes(q))
-    : pods;
+export function PodTable({ pods, query, statusFilter, onSelect, selected, onPodAction, onMergeTail, onPortForward, error }: PodTableProps) {
+  const shown = filterPods(pods, query, statusFilter ?? []);
   const selectedKey = selected ? `${selected.namespace}/${selected.name}` : null;
 
   const { menu: ctxMenu, pos, menuRef, openMenu, closeMenu } = useContextMenu<PodView>();
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set());
 
-  // Drop multi-selection keys that no longer exist (namespace/context switch
-  // or pods list refresh removed them). Without this, "Tail 3 pods" can show
-  // while the target list is stale/empty.
+  // Drop multi-selection keys whose pod no longer exists (namespace/context
+  // switch, or a refresh that removed it). Deliberately NOT keyed on the
+  // view-filtered list: the name/status filters are a *view* concern, and the
+  // merge action below reads the unfiltered `pods`, so filtering must not
+  // silently destroy a hand-picked selection. Pods that a filter hides stay
+  // selected and are reported by the "N hidden" counter in the action bar.
   useEffect(() => {
     if (multiSel.size === 0) return;
-    const valid = new Set(shown.map(p => `${p.namespace}/${p.name}`));
+    const valid = new Set(pods.map(p => `${p.namespace}/${p.name}`));
     setMultiSel(prev => {
       const next = new Set<string>();
       let changed = false;
@@ -57,7 +50,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pods, shown]);
+  }, [pods]);
 
   const allShownKeys = shown.map(p => `${p.namespace}/${p.name}`);
   const allSelected = allShownKeys.length > 0 && allShownKeys.every(k => multiSel.has(k));
@@ -105,19 +98,47 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
   const clearMulti = () => setMultiSel(new Set());
 
   const selectedPods = pods.filter(p => multiSel.has(`${p.namespace}/${p.name}`));
+  // Selected pods the current view filter is hiding. The merge still tails
+  // them (it reads `pods`), so say so rather than letting the count look wrong.
+  const shownKeySet = new Set(shown.map(p => `${p.namespace}/${p.name}`));
+  const hiddenSelectedCount = selectedPods.filter(
+    p => !shownKeySet.has(`${p.namespace}/${p.name}`),
+  ).length;
+
+  // Rendered in the empty state too: if the filter hides every pod while a
+  // selection is active, this bar is the only way to see or clear it.
+  const multiBar = multiSel.size >= 2 && (
+    <div className="pod-multi-bar">
+      <button
+        className="lc-btn"
+        onClick={() => { onMergeTail?.(selectedPods); clearMulti(); }}
+        title="合并 tail 选中 pod 的日志（多路流式输出）"
+      >
+        Tail {multiSel.size} pods
+        {hiddenSelectedCount > 0 ? ` (${hiddenSelectedCount} hidden)` : ''}
+      </button>
+      <button className="lc-btn" onClick={clearMulti} title="清除多选">Clear</button>
+    </div>
+  );
 
   if (shown.length === 0) {
     if (error) {
       return (
-        <div className="pod-empty error" title="kubectl 查询失败，下方为具体原因">
-          Error: {error}
-        </div>
+        <>
+          {multiBar}
+          <div className="pod-empty error" title="kubectl 查询失败，下方为具体原因">
+            Error: {error}
+          </div>
+        </>
       );
     }
     return (
-      <div className="pod-empty">
-        {pods.length === 0 ? 'No pods in this namespace.' : 'No pods match your filter.'}
-      </div>
+      <>
+        {multiBar}
+        <div className="pod-empty">
+          {pods.length === 0 ? 'No pods in this namespace.' : 'No pods match your filter.'}
+        </div>
+      </>
     );
   }
 
@@ -128,18 +149,7 @@ export function PodTable({ pods, query, onSelect, selected, onPodAction, onMerge
           Pod list refresh failed: {error}
         </div>
       )}
-      {multiSel.size >= 2 && (
-        <div className="pod-multi-bar">
-          <button
-            className="lc-btn"
-            onClick={() => { onMergeTail?.(selectedPods); clearMulti(); }}
-            title="合并 tail 选中 pod 的日志（多路流式输出）"
-          >
-            Tail {multiSel.size} pods
-          </button>
-          <button className="lc-btn" onClick={clearMulti} title="清除多选">Clear</button>
-        </div>
-      )}
+      {multiBar}
       <table className="pod-table">
         <thead>
           <tr>

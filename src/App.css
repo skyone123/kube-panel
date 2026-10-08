@@ -441,6 +441,15 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 
 /* Pod table card */
 .pod-card { flex: 0 0 auto; }
+
+/* The pods head carries tabs + status filter + live toggle + count. On a narrow
+   window (e.g. the 800x600 default at 200% DPI) that row overflows, and `.card`
+   is overflow:hidden — so the count was silently clipped. Wrap instead. */
+.pod-card .card-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
 .pod-table-wrap {
   max-height: min(46vh, 460px);
   overflow: auto;
@@ -1347,6 +1356,158 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   color: var(--accent-bright);
   background: rgba(56, 139, 253, 0.10);
   border-color: rgba(56, 139, 253, 0.30);
+}
+
+/* =========================================================================
+   Pod status filter (multi-select dropdown in the pods card head)
+   ========================================================================= */
+.status-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.status-filter-btn:hover {
+  border-color: #484f58;
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.status-filter-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.20);
+}
+.status-filter-btn.active {
+  color: var(--accent-bright);
+  background: rgba(56, 139, 253, 0.10);
+  border-color: rgba(56, 139, 253, 0.30);
+}
+.status-filter-label {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-filter-caret {
+  display: flex;
+  color: var(--text-muted);
+}
+.status-filter-caret svg { width: 12px; height: 12px; }
+
+.status-filter-pop {
+  position: fixed;
+  /* Above the table/card content but below the fullscreen log overlay (1000)
+     and the modal backdrop (1050) — a dropdown must never paint over them. */
+  z-index: 900;
+  min-width: 210px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.sf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-muted);
+  /* Opaque on purpose: this header is sticky inside the scrolling panel, so a
+     translucent background would let scrolled rows bleed through it. */
+  background: var(--bg-elevated);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.sf-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.sf-all-btn {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--accent-bright);
+  border: 1px solid rgba(56, 139, 253, 0.30);
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sf-all-btn:hover:not(:disabled) {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: var(--accent);
+}
+.sf-all-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.sf-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+.sf-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  transition: background 0.1s;
+}
+.sf-item:hover { background: var(--bg-hover); }
+.sf-item input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.sf-item .sf-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sf-item.status-error .sf-dot { background: var(--status-error); }
+.sf-item.status-warn  .sf-dot { background: var(--status-warn); }
+.sf-item.status-ok    .sf-dot { background: var(--status-ok); }
+.sf-item.status-error .sf-name { color: var(--status-error); }
+.sf-item.status-warn  .sf-name { color: var(--status-warn); }
+.sf-item .sf-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.sf-item .sf-count {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+.sf-empty {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
 }
 
 /* Deployment table images column */

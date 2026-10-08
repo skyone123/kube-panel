@@ -37,7 +37,7 @@ in one desktop app.
 | Area | What you get |
 | :--- | :--- |
 | 🧭 **Context & namespace** | Parse `~/.kube/config` + `KUBECONFIG` offline; one-click context switch; all-namespaces default view so you find any pod. |
-| 📋 **Pods** | Substring filter (name / namespace / node), status color pills, high-restart highlighting, **right-click → images / ConfigMaps / describe / events / YAML**. |
+| 📋 **Pods** | Substring filter (name / namespace / node), **status filter (multi-select, per-status counts, worst-first)**, status color pills, high-restart highlighting, **right-click → images / ConfigMaps / describe / events / YAML**. |
 | 🖥️ **Nodes** | Node table with **Ready / pressure (Memory/PID/Disk) / roles / version / OS**, allocatable summary, live auto-refresh, right-click describe. |
 | 📜 **Logs** | Streaming `kubectl logs -f` (ring buffer, follow-tail, `--previous`/`--since`/`--tail`, container dropdown), **fullscreen**, **regex search** with prev/next + match count, **export to `.log`**. |
 | 🔀 **Multi-pod tail** | Select ≥2 pods → one merged stream with `[pod]` prefixes. |
