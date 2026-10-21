@@ -1713,6 +1713,17 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 .pf-clear-btn {
   color: var(--text-muted) !important;
 }
+.pf-reconnect-btn {
+  color: var(--status-ok) !important;
+  border-color: rgba(63, 185, 80, 0.35) !important;
+}
+.pf-reconnect-btn:hover:not(:disabled) {
+  background: var(--status-ok-bg) !important;
+  border-color: var(--status-ok) !important;
+}
+.pf-reconnect-btn + .pf-clear-btn {
+  margin-left: 6px;
+}
 .pf-message {
   font-size: 10.5px;
   color: var(--status-error);

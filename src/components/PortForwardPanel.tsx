@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startPortForward, stopPortForward, listPortForwards, clearPortForward, onPfStatus } from '../api/tauri';
+import type { PfSessionView } from '../types';
 
 interface PortForwardPanelProps {
   ctxName: string;
@@ -99,6 +100,18 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
     onSuccess: () => qc.invalidateQueries({ queryKey: ['port-forwards'] }),
   });
 
+  // Reconnect: re-run the same command (context/ns/target/ports) as a NEW
+  // session, then clear the dead entry. If start fails the dead entry stays
+  // so the user can retry.
+  const reconnectMutation = useMutation({
+    mutationFn: async (s: PfSessionView) => {
+      const newId = await startPortForward(s.context, s.namespace, s.target, s.local_port, s.remote_port);
+      await clearPortForward(s.id);
+      return newId;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['port-forwards'] }),
+  });
+
   const targetValid = target.trim().length > 0;
   const localNum = Number(localPort);
   const remoteNum = Number(remotePort);
@@ -148,13 +161,28 @@ export function PortForwardPanel({ ctxName, namespace, onClose, initialTarget = 
                         {s.status === 'running' ? (
                           <button className="lc-btn pf-stop-btn" onClick={() => stopMutation.mutate(s.id)} title="停止 port-forward 并回收子进程">Stop</button>
                         ) : (
-                          <button className="lc-btn pf-clear-btn" onClick={() => clearMutation.mutate(s.id)} title="清除该记录">Clear</button>
+                          <>
+                            <button
+                              className="lc-btn pf-reconnect-btn"
+                              disabled={reconnectMutation.isPending && reconnectMutation.variables?.id === s.id}
+                              onClick={() => reconnectMutation.mutate(s)}
+                              title="用原参数（context/命名空间/目标/端口）重新启动 port-forward"
+                            >
+                              {reconnectMutation.isPending && reconnectMutation.variables?.id === s.id ? 'Reconnecting…' : 'Reconnect'}
+                            </button>
+                            <button className="lc-btn pf-clear-btn" onClick={() => clearMutation.mutate(s.id)} title="清除该记录">Clear</button>
+                          </>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            )}
+            {reconnectMutation.isError && (
+              <div className="rollout-result err">
+                Reconnect failed: {(reconnectMutation.error as Error)?.message ?? 'unknown error'}
+              </div>
             )}
           </div>
 
