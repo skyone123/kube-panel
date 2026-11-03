@@ -4,8 +4,15 @@ import { DeploymentTable } from './DeploymentTable';
 import type { DeploymentView, RolloutMode } from '../types';
 
 const deploys: DeploymentView[] = [
-  { name: 'web', namespace: 'default', ready: '2/3', updated: '3/3', replicas: 3, available: 2, age: '5m', images: ['nginx:1.25'] },
-  { name: 'api', namespace: 'prod', ready: '1/1', updated: '1/1', replicas: 1, available: 1, age: '1h', images: ['a:v1', 'b:v2'] },
+  {
+    name: 'web', namespace: 'default', ready: '2/3', updated: '3/3', replicas: 3, available: 2, age: '5m',
+    images: ['nginx:1.25'], containers: [{ name: 'web', image: 'nginx:1.25' }],
+  },
+  {
+    name: 'api', namespace: 'prod', ready: '1/1', updated: '1/1', replicas: 1, available: 1, age: '1h',
+    images: ['a:v1', 'b:v2'],
+    containers: [{ name: 'a', image: 'a:v1' }, { name: 'b', image: 'a:v1' }, { name: 'c', image: 'b:v2' }],
+  },
 ];
 
 describe('DeploymentTable', () => {
@@ -38,6 +45,7 @@ describe('DeploymentTable', () => {
     const row = screen.getByText('web').closest('tr')!;
     fireEvent.contextMenu(row);
     expect(screen.getByText('Restart')).toBeInTheDocument();
+    expect(screen.getByText('Update image…')).toBeInTheDocument();
     expect(screen.getByText('Scale…')).toBeInTheDocument();
     expect(screen.getByText('Undo')).toBeInTheDocument();
     expect(screen.getByText('History')).toBeInTheDocument();
@@ -52,6 +60,18 @@ describe('DeploymentTable', () => {
     expect(onAction).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'web' }),
       'restart' as RolloutMode,
+    );
+  });
+
+  it('Update image fires onAction with image mode', () => {
+    const onAction = vi.fn();
+    render(<DeploymentTable deployments={deploys} query="" onAction={onAction} />);
+    const row = screen.getByText('api').closest('tr')!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByText('Update image…'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'api' }),
+      'image' as RolloutMode,
     );
   });
 

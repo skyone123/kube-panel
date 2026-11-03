@@ -1602,6 +1602,31 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   background: var(--status-warn-bg);
   border: 1px solid rgba(210, 153, 34, 0.30);
 }
+.rollout-image-hint {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.rollout-image-row { align-items: flex-start; }
+.rollout-image-field { flex: 1; min-width: 0; }
+.rollout-image-field .lc-label {
+  min-width: 82px;
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rollout-image-input {
+  width: 100%;
+  min-width: 300px;
+  flex: 1;
+}
+.rollout-image-current {
+  padding-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+}
 
 /* Revision history table (reuse pod-table aesthetic) */
 .revision-table {

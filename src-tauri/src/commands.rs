@@ -644,6 +644,64 @@ pub async fn rollout_undo(
     Ok(())
 }
 
+/// One `container=image` pair for `kubectl set image`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ImageUpdate {
+    pub container: String,
+    pub image: String,
+}
+
+/// Pure helper: build the argv for `kubectl set image deployment/<name> ...`.
+/// Extracted so validation / token assembly is unit-testable without kubectl.
+pub fn build_set_image_args(name: &str, updates: &[ImageUpdate]) -> Result<Vec<String>, String> {
+    if name.trim().is_empty() || name.starts_with('-') {
+        return Err("invalid deployment name".into());
+    }
+    if updates.is_empty() {
+        return Err("at least one container image is required".into());
+    }
+    let mut args: Vec<String> = vec![
+        "set".into(),
+        "image".into(),
+        format!("deployment/{}", name.trim()),
+    ];
+    for u in updates {
+        let container = u.container.trim();
+        let image = u.image.trim();
+        if container.is_empty() || image.is_empty() {
+            return Err("container and image must not be empty".into());
+        }
+        // `container=image` is split on the first '=', so a '=' in the
+        // container name would corrupt the pair. Whitespace would split the
+        // token into multiple argv entries.
+        if container.contains('=') || container.chars().any(char::is_whitespace) {
+            return Err("invalid container name".into());
+        }
+        if image.chars().any(char::is_whitespace) {
+            return Err("image must not contain whitespace".into());
+        }
+        args.push(format!("{container}={image}"));
+    }
+    Ok(args)
+}
+
+/// Update one or more container images on a Deployment. Changing the Pod
+/// template makes the Deployment controller perform a rolling update
+/// automatically — no separate `rollout restart` is needed.
+#[tauri::command]
+pub async fn rollout_set_image(
+    context: String, namespace: String, name: String, updates: Vec<ImageUpdate>,
+    rt: State<'_, KubeRuntime>,
+) -> Result<(), String> {
+    let args = build_set_image_args(&name, &updates)?;
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run(&context, ns_opt, &arg_refs).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn get_rollout_revisions(
     context: String, namespace: String, name: String,
@@ -842,4 +900,61 @@ pub async fn describe_resource(
     let res = rt.run(&context, ns_opt, &arg_refs).await.map_err(|e| e.to_string())?;
     if res.exit_code != 0 { return Err(res.stderr); }
     Ok(res.stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_set_image_args, ImageUpdate};
+
+    fn upd(container: &str, image: &str) -> ImageUpdate {
+        ImageUpdate { container: container.into(), image: image.into() }
+    }
+
+    #[test]
+    fn set_image_args_single_container() {
+        let args = build_set_image_args("web", &[upd("nginx", "nginx:1.27")]).unwrap();
+        assert_eq!(args, vec!["set", "image", "deployment/web", "nginx=nginx:1.27"]);
+    }
+
+    #[test]
+    fn set_image_args_multiple_containers_keep_order() {
+        let args = build_set_image_args(
+            "api",
+            &[upd("app", "registry/api:v2"), upd("envoy", "envoy:v1.31")],
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec!["set", "image", "deployment/api", "app=registry/api:v2", "envoy=envoy:v1.31"]
+        );
+    }
+
+    #[test]
+    fn set_image_args_trims_values() {
+        let args = build_set_image_args(" web ", &[upd(" nginx ", " nginx:1.27 ")]).unwrap();
+        assert_eq!(args, vec!["set", "image", "deployment/web", "nginx=nginx:1.27"]);
+    }
+
+    #[test]
+    fn set_image_args_rejects_empty_updates() {
+        assert!(build_set_image_args("web", &[]).is_err());
+    }
+
+    #[test]
+    fn set_image_args_rejects_empty_values() {
+        assert!(build_set_image_args("web", &[upd("", "nginx:1")]).is_err());
+        assert!(build_set_image_args("web", &[upd("nginx", "  ")]).is_err());
+    }
+
+    #[test]
+    fn set_image_args_rejects_whitespace_and_injection() {
+        assert!(build_set_image_args("web", &[upd("nginx", "nginx:1 2")]).is_err());
+        assert!(build_set_image_args("web", &[upd("ng=inx", "nginx:1")]).is_err());
+        assert!(build_set_image_args("web", &[upd("ng inx", "nginx:1")]).is_err());
+    }
+
+    #[test]
+    fn set_image_args_rejects_flag_like_name() {
+        assert!(build_set_image_args("-rf", &[upd("nginx", "nginx:1")]).is_err());
+    }
 }

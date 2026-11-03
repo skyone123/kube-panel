@@ -75,6 +75,9 @@ export function DeploymentTable({ deployments, query, onAction }: DeploymentTabl
           <button className="ctx-item" onClick={() => fireAction('restart')} title="kubectl rollout restart（滚动重启，不中断服务）">
             Restart
           </button>
+          <button className="ctx-item" onClick={() => fireAction('image')} title="修改容器镜像并触发滚动更新（kubectl set image）">
+            Update image…
+          </button>
           <button className="ctx-item" onClick={() => fireAction('scale')} title="调整副本数（scale up/down）">
             Scale…
           </button>

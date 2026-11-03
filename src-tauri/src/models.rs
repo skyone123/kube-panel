@@ -284,11 +284,20 @@ pub struct DeploymentStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct DeploymentContainerView {
+    pub name: String,
+    pub image: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DeploymentView {
     pub name: String, pub namespace: String,
     pub ready: String, pub updated: String,
     pub replicas: i64, pub available: i64,
     pub age: String, pub images: Vec<String>,
+    // Container name → image mapping, in spec order (no dedup). Needed by
+    // `kubectl set image deployment/<name> <container>=<image>`.
+    pub containers: Vec<DeploymentContainerView>,
 }
 
 pub fn parse_deployment_list(json: &[u8]) -> std::io::Result<Vec<DeploymentView>> {
@@ -310,6 +319,12 @@ pub fn parse_deployment_list(json: &[u8]) -> std::io::Result<Vec<DeploymentView>
         let mut seen = HashSet::new();
         images.retain(|s| seen.insert(s.clone()));
         images.sort();
+        let containers = d.spec.template.spec.containers.iter()
+            .map(|c| DeploymentContainerView {
+                name: c.name.clone(),
+                image: c.image.clone(),
+            })
+            .collect();
         out.push(DeploymentView {
             name: d.metadata.name,
             namespace: d.metadata.namespace,
@@ -319,6 +334,7 @@ pub fn parse_deployment_list(json: &[u8]) -> std::io::Result<Vec<DeploymentView>
             available,
             age,
             images,
+            containers,
         });
     }
     Ok(out)
@@ -956,13 +972,25 @@ mod tests {
         assert_eq!(web.available, 2);
         assert!(!web.age.is_empty());
         assert_eq!(web.images, vec!["nginx:1.25"]);
+        assert_eq!(web.containers.len(), 1);
+        assert_eq!(web.containers[0].name, "web");
+        assert_eq!(web.containers[0].image, "nginx:1.25");
         let api = views.iter().find(|v| v.name == "api").unwrap();
         assert_eq!(api.namespace, "prod");
         assert_eq!(api.ready, "0/1");
         assert_eq!(api.updated, "0/1");
         assert_eq!(api.replicas, 1);
         assert_eq!(api.available, 0);
+        // `images` is deduped+sorted, but `containers` keeps every entry (and
+        // its name) in spec order — required for `kubectl set image`.
         assert_eq!(api.images, vec!["a:v1", "b:v2"]);
+        assert_eq!(api.containers.len(), 3);
+        assert_eq!(api.containers[0].name, "a");
+        assert_eq!(api.containers[0].image, "a:v1");
+        assert_eq!(api.containers[1].name, "b");
+        assert_eq!(api.containers[1].image, "a:v1");
+        assert_eq!(api.containers[2].name, "c");
+        assert_eq!(api.containers[2].image, "b:v2");
     }
 
     #[test]

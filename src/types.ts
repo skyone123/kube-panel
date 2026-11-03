@@ -18,7 +18,9 @@ export type EventChunk = { id: string; event: EventView };
 
 export type PodActionMode = 'images' | 'configmaps' | 'secrets' | 'describe' | 'events' | 'yaml' | 'exec';
 
-export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history';
+export type RolloutMode = 'restart' | 'scale' | 'undo' | 'history' | 'image';
+
+export type DeploymentContainer = { name: string; image: string };
 
 export type DeploymentView = {
   name: string;
@@ -29,7 +31,10 @@ export type DeploymentView = {
   available: number;
   age: string;
   images: string[];
+  containers: DeploymentContainer[];
 };
+
+export type ImageUpdate = { container: string; image: string };
 
 export type MultiPodTarget = { namespace: string; pod: string; container: string | null };
 

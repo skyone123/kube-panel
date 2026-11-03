@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { DeploymentView, RolloutMode } from '../types';
-import { rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions } from '../api/tauri';
+import type { DeploymentView, ImageUpdate, RolloutMode } from '../types';
+import { rolloutRestart, rolloutScale, rolloutUndo, rolloutSetImage, getRolloutRevisions } from '../api/tauri';
 
 interface RolloutModalProps {
   deploy: DeploymentView;
@@ -16,6 +16,7 @@ function modeTitle(mode: RolloutMode): string {
     case 'scale': return 'Scale';
     case 'undo': return 'Undo';
     case 'history': return 'History';
+    case 'image': return 'Update image';
   }
 }
 
@@ -179,6 +180,99 @@ function UndoPanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxNa
   );
 }
 
+function ImagePanel({ deploy, ctxName, onClose }: { deploy: DeploymentView; ctxName: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const containers = deploy.containers ?? [];
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(containers.map(c => [c.name, c.image])),
+  );
+
+  // Only containers whose image actually changed take part in the command.
+  const updates: ImageUpdate[] = containers
+    .map(c => ({ container: c.name, image: (draft[c.name] ?? '').trim() }))
+    .filter((u, i) => u.image !== containers[i].image);
+
+  const hasWhitespace = containers.some(c => /\s/.test(draft[c.name] ?? ''));
+  const valid = updates.length > 0 && !hasWhitespace;
+
+  const updatesText = updates.length
+    ? updates.map(u => `${u.container}=${u.image}`).join(' ')
+    : '<container>=<image>';
+  const cmd = `kubectl set image deployment/${deploy.name} ${updatesText} -n ${deploy.namespace} --context ${ctxName}`;
+
+  const mutation = useMutation({
+    mutationFn: () => rolloutSetImage(ctxName, deploy.namespace, deploy.name, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deployments', ctxName, deploy.namespace] });
+      qc.invalidateQueries({ queryKey: ['pods', ctxName, deploy.namespace] });
+    },
+  });
+
+  if (containers.length === 0) {
+    return <div className="pod-modal-empty">No containers found for this deployment.</div>;
+  }
+
+  return (
+    <div className="rollout-panel">
+      <div className="rollout-image-hint">
+        Changing a container image updates the pod template, so the Deployment controller
+        performs the rolling update automatically — no separate Restart needed.
+      </div>
+      {containers.map(c => {
+        const value = draft[c.name] ?? '';
+        const changed = value.trim() !== c.image;
+        return (
+          <div className="rollout-input-row rollout-image-row" key={c.name}>
+            <label className="lc-field rollout-image-field">
+              <span className="lc-label">{c.name}</span>
+              <input
+                className="rollout-input rollout-image-input"
+                value={value}
+                onChange={e => setDraft(d => ({ ...d, [c.name]: e.target.value }))}
+                aria-label={`Image for container ${c.name}`}
+                title={`当前镜像: ${c.image}`}
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </label>
+            {changed && <span className="rollout-image-current">current: {c.image}</span>}
+          </div>
+        );
+      })}
+      <div className="rollout-cmd mono">{cmd}</div>
+      {hasWhitespace && (
+        <div className="rollout-result warn">Image references cannot contain whitespace.</div>
+      )}
+      {mutation.isError && (
+        <div className="rollout-result err">
+          {(mutation.error as Error)?.message ?? 'unknown error'}
+        </div>
+      )}
+      {mutation.isSuccess ? (
+        <div className="rollout-result ok">
+          <span>Updated {updates.length} container{updates.length === 1 ? '' : 's'} — rolling out</span>
+          <button className="lc-btn" onClick={() => qc.invalidateQueries({ queryKey: ['deployments', ctxName, deploy.namespace] })}>
+            Refresh deployments
+          </button>
+          <button className="lc-btn" onClick={onClose}>Close</button>
+        </div>
+      ) : (
+        <div className="rollout-actions">
+          <button className="lc-btn" onClick={onClose}>Cancel</button>
+          <button
+            className="lc-btn rollout-confirm"
+            disabled={mutation.isPending || !valid}
+            onClick={() => mutation.mutate()}
+            title="执行 kubectl set image，Deployment 会自动滚动更新"
+          >
+            {mutation.isPending ? 'Updating…' : 'Confirm'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HistoryPanel({ deploy, ctxName }: { deploy: DeploymentView; ctxName: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['rollout-revisions', ctxName, deploy.namespace, deploy.name],
@@ -238,6 +332,7 @@ export function RolloutModal({ deploy, mode, ctxName, onClose }: RolloutModalPro
           {mode === 'restart' && <RestartPanel deploy={deploy} ctxName={ctxName} onClose={onClose} />}
           {mode === 'scale' && <ScalePanel deploy={deploy} ctxName={ctxName} onClose={onClose} />}
           {mode === 'undo' && <UndoPanel deploy={deploy} ctxName={ctxName} onClose={onClose} />}
+          {mode === 'image' && <ImagePanel deploy={deploy} ctxName={ctxName} onClose={onClose} />}
           {mode === 'history' && <HistoryPanel deploy={deploy} ctxName={ctxName} />}
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView, ResourceListView, ResourceKind, SecretView, SecretDataView } from '../types';
+import type { Context, PodView, HistoryEntry, EventView, EventChunk, ConfigMapView, ConfigMapDataView, MultiPodTarget, DeploymentView, PfSessionView, NodeView, RolloutRevisionView, ResourceListView, ResourceKind, SecretView, SecretDataView, ImageUpdate } from '../types';
 
 export const listContexts = () => invoke<Context[]>('list_contexts');
 export const currentContext = () => invoke<Context | null>('current_context');
@@ -96,6 +96,8 @@ export const rolloutScale = (context: string, namespace: string, name: string, r
   invoke<void>('rollout_scale', { context, namespace, name, replicas });
 export const rolloutUndo = (context: string, namespace: string, name: string, toRevision: number | null) =>
   invoke<void>('rollout_undo', { context, namespace, name, toRevision });
+export const rolloutSetImage = (context: string, namespace: string, name: string, updates: ImageUpdate[]) =>
+  invoke<void>('rollout_set_image', { context, namespace, name, updates });
 export const getRolloutRevisions = (context: string, namespace: string, name: string) =>
   invoke<RolloutRevisionView[]>('get_rollout_revisions', { context, namespace, name });
 

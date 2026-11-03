@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock @tauri-apps/api/core invoke
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 import { invoke } from '@tauri-apps/api/core';
-import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData, exportPodLogs, saveTextToFile } from './tauri';
+import { listContexts, getPods, getDeployments, rolloutRestart, rolloutScale, rolloutUndo, rolloutSetImage, getRolloutRevisions, startPortForward, stopPortForward, listPortForwards, clearPortForward, streamEvents, getSecrets, getSecretData, exportPodLogs, saveTextToFile } from './tauri';
 
 describe('api wrappers', () => {
   it('listContexts calls invoke with list_contexts', async () => {
@@ -47,6 +47,15 @@ describe('api wrappers', () => {
     (invoke as any).mockResolvedValue(undefined);
     await rolloutUndo('dev', 'default', 'web', null);
     expect(invoke).toHaveBeenCalledWith('rollout_undo', { context: 'dev', namespace: 'default', name: 'web', toRevision: null });
+  });
+
+  it('rolloutSetImage passes updates', async () => {
+    (invoke as any).mockResolvedValue(undefined);
+    const updates = [{ container: 'nginx', image: 'nginx:1.27' }];
+    await rolloutSetImage('dev', 'default', 'web', updates);
+    expect(invoke).toHaveBeenCalledWith('rollout_set_image', {
+      context: 'dev', namespace: 'default', name: 'web', updates,
+    });
   });
 
   it('getRolloutRevisions passes context + namespace + name', async () => {
