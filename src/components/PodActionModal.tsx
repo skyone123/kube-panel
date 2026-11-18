@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { PodView, PodActionMode, EventView } from '../types';
-import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, onLogStreamEnd, getSecrets, getSecretData } from '../api/tauri';
+import type { PodView, PodActionMode, EventView, SecretView } from '../types';
+import { describePod, getEvents, getConfigmaps, getPodConfigmaps, getConfigmap, getPodYaml, listContexts, streamEvents, stopLogStream, onEventChunk, onLogStreamEnd, getSecrets, getPodSecrets, getSecretData } from '../api/tauri';
 import { HighlightText } from './HighlightText';
 import { ExportButton } from './ExportButton';
 
@@ -209,13 +209,23 @@ function decodeSecretValue(b64: string): string {
 
 type RevealState = 'hidden' | 'confirm' | 'revealed';
 
-function SecretsPanel({ ctxName, namespace }: { ctxName: string; namespace: string }) {
+function SecretsPanel({ ctxName, pod }: { ctxName: string; pod: PodView }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [revealState, setRevealState] = useState<Record<string, RevealState>>({});
+  // Default OFF: list only the Secrets this pod actually references. Flip to
+  // ON to see every Secret in the namespace (referenced ones float to top).
+  const [showAll, setShowAll] = useState(false);
+  const namespace = pod.namespace;
 
   const secretsQuery = useQuery({
     queryKey: ['secrets', ctxName, namespace],
     queryFn: () => getSecrets(ctxName, namespace),
+    enabled: !!ctxName,
+  });
+
+  const podSecretsQuery = useQuery({
+    queryKey: ['pod-secrets', ctxName, namespace, pod.name],
+    queryFn: () => getPodSecrets(ctxName, namespace, pod.name),
     enabled: !!ctxName,
   });
 
@@ -225,8 +235,27 @@ function SecretsPanel({ ctxName, namespace }: { ctxName: string; namespace: stri
     enabled: !!selected,
   });
 
-  const secrets = secretsQuery.data ?? [];
-  const current = secrets.find(s => s.name === selected) ?? null;
+  const allSecrets = secretsQuery.data ?? [];
+  const referencedNames = podSecretsQuery.data ?? [];
+  const referencedSet = useMemo(() => new Set(referencedNames), [referencedNames]);
+
+  // List contents + order depend on the toggle:
+  //   - OFF: only referenced Secrets (already alphabetical from the backend).
+  //   - ON:  every Secret in the namespace, referenced group first.
+  // Selection is intentionally NOT cleared when the toggle flips — the Secret
+  // the user is reading stays open as long as it's still in the new list.
+  const displayed: SecretView[] = useMemo(() => {
+    if (!showAll) {
+      return referencedNames
+        .map(name => allSecrets.find(s => s.name === name))
+        .filter((s): s is SecretView => !!s);
+    }
+    const referenced = allSecrets.filter(s => referencedSet.has(s.name));
+    const others = allSecrets.filter(s => !referencedSet.has(s.name));
+    return [...referenced, ...others];
+  }, [showAll, allSecrets, referencedNames, referencedSet]);
+
+  const current = allSecrets.find(s => s.name === selected) ?? null;
   const entries = dataQuery.data?.entries ?? [];
 
   const selectSecret = (name: string) => {
@@ -241,29 +270,58 @@ function SecretsPanel({ ctxName, namespace }: { ctxName: string; namespace: stri
     else setRevealState(prev => ({ ...prev, [key]: 'hidden' }));
   };
 
-  if (secretsQuery.isLoading) {
+  if (secretsQuery.isLoading || podSecretsQuery.isLoading) {
     return <div className="pod-modal-loading">Loading Secrets…</div>;
   }
   if (secretsQuery.error) {
     return <div className="pod-modal-error">Error: {(secretsQuery.error as Error).message}</div>;
   }
-  if (secrets.length === 0) {
-    return <div className="pod-modal-empty">No Secrets in this namespace.</div>;
-  }
 
   return (
     <div className="cm-split">
       <div className="cm-list">
-        <div className="cm-list-head">Secrets ({secrets.length})</div>
-        {secrets.map(s => (
-          <button
-            key={s.name}
-            className={`cm-item${s.name === selected ? ' active' : ''}`}
-            onClick={() => selectSecret(s.name)}
+        <div className="cm-list-head">
+          <span className="cm-list-head-title">
+            {showAll ? `Secrets (${allSecrets.length})` : `Referenced (${referencedNames.length})`}
+          </span>
+          <label
+            className="cm-list-toggle lc-check"
+            title="默认只显示该 pod 引用到的 Secret；勾选后显示该命名空间全部 Secret（pod 引用到的排在最前）"
           >
-            {s.name}
-          </button>
-        ))}
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={e => setShowAll(e.target.checked)}
+              aria-label="Show all Secrets in this namespace"
+            />
+            <span>Show all</span>
+          </label>
+        </div>
+        {podSecretsQuery.error && !showAll && (
+          <div className="pod-modal-error">
+            Error loading pod refs: {(podSecretsQuery.error as Error).message}
+          </div>
+        )}
+        {displayed.length === 0 && !podSecretsQuery.error ? (
+          <div className="pod-modal-empty">
+            {showAll
+              ? 'No Secrets in this namespace.'
+              : 'No Secrets referenced by this pod. Toggle "Show all" to browse the namespace.'}
+          </div>
+        ) : (
+          displayed.map(s => (
+            <button
+              key={s.name}
+              className={`cm-item${s.name === selected ? ' active' : ''}`}
+              onClick={() => selectSecret(s.name)}
+            >
+              {showAll && referencedSet.has(s.name) && (
+                <span className="cm-item-badge" title="该 pod 引用到此 Secret">pod</span>
+              )}
+              {s.name}
+            </button>
+          ))
+        )}
       </div>
       <div className="cm-detail">
         {current ? (
@@ -619,7 +677,7 @@ export function PodActionModal({ pod, mode, onClose }: PodActionModalProps) {
         <div className="pod-modal-body">
           {mode === 'images' && <ImagesPanel pod={pod} />}
           {mode === 'configmaps' && <ConfigmapsPanel pod={pod} ctxName={ctxName} />}
-          {mode === 'secrets' && <SecretsPanel ctxName={ctxName} namespace={pod.namespace} />}
+          {mode === 'secrets' && <SecretsPanel ctxName={ctxName} pod={pod} />}
           {mode === 'describe' && <DescribePanel pod={pod} ctxName={ctxName} />}
           {mode === 'events' && <EventsPanel pod={pod} ctxName={ctxName} />}
           {mode === 'yaml' && <YamlPanel pod={pod} ctxName={ctxName} />}

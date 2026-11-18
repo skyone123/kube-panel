@@ -548,6 +548,22 @@ pub async fn get_pod_configmaps(
     crate::models::parse_pod_configmap_refs(res.stdout.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// Names of the Secrets a pod references (envFrom / env.valueFrom / volumes /
+/// imagePullSecrets), sorted + deduped. Drives the Secrets panel's default
+/// "referenced only" view; the namespace-wide `get_secrets` list is the
+/// "show all" superset.
+#[tauri::command]
+pub async fn get_pod_secrets(
+    context: String, namespace: String, pod: String,
+    rt: State<'_, KubeRuntime>,
+) -> Result<Vec<String>, String> {
+    let ns_opt = if namespace.is_empty() { None } else { Some(namespace.as_str()) };
+    let res = rt.run_no_history(&context, ns_opt, &["get", "pod", &pod, "-o", "json"]).await
+        .map_err(|e| e.to_string())?;
+    if res.exit_code != 0 { return Err(res.stderr); }
+    crate::models::parse_pod_secret_refs(res.stdout.as_bytes()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_configmap(
     context: String, namespace: String, name: String,

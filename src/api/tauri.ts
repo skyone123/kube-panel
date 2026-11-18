@@ -38,6 +38,8 @@ export const getConfigmap = (context: string, namespace: string, name: string) =
 
 export const getSecrets = (context: string, namespace: string) =>
   invoke<SecretView[]>('get_secrets', { context, namespace });
+export const getPodSecrets = (context: string, namespace: string, pod: string) =>
+  invoke<string[]>('get_pod_secrets', { context, namespace, pod });
 export const getSecretData = (context: string, namespace: string, name: string) =>
   invoke<SecretDataView>('get_secret', { context, namespace, name });
 

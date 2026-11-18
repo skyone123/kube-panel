@@ -1101,6 +1101,13 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
 /* ConfigMap split */
 .cm-split {
   display: flex;
+  /* Pin the split's height so the LEFT list and RIGHT detail scroll
+     independently. Without an explicit height the split grows with its
+     content, the per-column `overflow: auto` never engages, and the outer
+     `.pod-modal-body` ends up scrolling BOTH columns together — which
+     makes browsing a long Secrets/ConfigMaps list feel broken.
+     60vh + the ~5vh modal header stays well under `.pod-modal`'s 80vh. */
+  height: 60vh;
   min-height: 240px;
 }
 .cm-list {
@@ -1109,6 +1116,8 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   overflow: auto;
   display: flex;
   flex-direction: column;
+  /* flex children need min-height:0 to actually shrink and scroll. */
+  min-height: 0;
 }
 .cm-list-head {
   padding: 8px 14px;
@@ -1119,6 +1128,55 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-muted);
   background: rgba(255, 255, 255, 0.015);
+  /* flex so a header can hold a title on the left + a small toggle on the
+     right (Secrets panel's "Show all"). A lone text node (ConfigMaps panel)
+     still renders as a single flex item, unchanged. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cm-list-head-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-list-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.cm-list-toggle input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.cm-item-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
+  border-radius: 3px;
+  color: var(--accent-bright);
+  background: rgba(56, 139, 253, 0.14);
+  border: 1px solid rgba(56, 139, 253, 0.30);
+  vertical-align: middle;
+  text-transform: lowercase;
+}
+.cm-item.active .cm-item-badge {
+  background: rgba(56, 139, 253, 0.22);
+  border-color: rgba(56, 139, 253, 0.45);
 }
 .cm-item {
   display: block;
@@ -1143,6 +1201,8 @@ a:hover { color: var(--accent-bright); text-decoration: underline; }
   overflow: auto;
   padding: 0;
   min-width: 0;
+  /* See .cm-list — required for the column to scroll inside .cm-split. */
+  min-height: 0;
 }
 .cm-detail-head {
   display: flex;

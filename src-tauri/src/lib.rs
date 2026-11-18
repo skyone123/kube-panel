@@ -60,6 +60,7 @@ pub fn run() {
             commands::get_events,
             commands::get_configmaps,
             commands::get_pod_configmaps,
+            commands::get_pod_secrets,
             commands::get_configmap,
             commands::get_secrets,
             commands::get_secret,

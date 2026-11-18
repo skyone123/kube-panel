@@ -343,23 +343,41 @@ pub fn parse_deployment_list(json: &[u8]) -> std::io::Result<Vec<DeploymentView>
 // ---------------------------------------------------------------------------
 // Pod-configmap-refs parser
 // ---------------------------------------------------------------------------
+//
+// `PodForRefs` is shared by `parse_pod_configmap_refs` and `parse_pod_secret_refs`.
+// All fields are `serde(default)` so the same struct tolerates pods that only
+// use one of the two ref kinds (or neither).
 
 #[derive(Debug, Clone, Deserialize)]
 struct PodConfigMapSpec {
     #[serde(default)] pub containers: Vec<PodConfigContainer>,
     #[serde(default)] pub initContainers: Vec<PodConfigContainer>,
     #[serde(default)] pub volumes: Vec<PodConfigVolume>,
+    #[serde(default)] pub imagePullSecrets: Vec<NamedRef>,
 }
 #[derive(Debug, Clone, Default, Deserialize)]
 struct PodConfigContainer {
     #[serde(default)] pub envFrom: Vec<EnvFrom>,
     #[serde(default)] pub env: Vec<EnvVar>,
 }
-#[derive(Debug, Clone, Default, Deserialize)] struct EnvFrom { #[serde(default)] pub configMapRef: Option<NamedRef> }
+#[derive(Debug, Clone, Default, Deserialize)]
+struct EnvFrom {
+    #[serde(default)] pub configMapRef: Option<NamedRef>,
+    #[serde(default)] pub secretRef: Option<NamedRef>,
+}
 #[derive(Debug, Clone, Default, Deserialize)] struct EnvVar { #[serde(default)] pub valueFrom: Option<ValueFrom> }
-#[derive(Debug, Clone, Default, Deserialize)] struct ValueFrom { #[serde(default)] pub configMapKeyRef: Option<NamedRef> }
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ValueFrom {
+    #[serde(default)] pub configMapKeyRef: Option<NamedRef>,
+    #[serde(default)] pub secretKeyRef: Option<NamedRef>,
+}
 #[derive(Debug, Clone, Default, Deserialize)] struct NamedRef { #[serde(default)] pub name: Option<String> }
-#[derive(Debug, Clone, Default, Deserialize)] struct PodConfigVolume { #[serde(default)] pub configMap: Option<NamedRef> }
+#[derive(Debug, Clone, Default, Deserialize)]
+struct PodConfigVolume {
+    #[serde(default)] pub configMap: Option<NamedRef>,
+    #[serde(default)] pub secret: Option<VolumeSecretRef>,
+}
+#[derive(Debug, Clone, Default, Deserialize)] struct VolumeSecretRef { #[serde(default)] pub secretName: Option<String> }
 
 #[derive(Debug, Clone, Deserialize)]
 struct PodForRefs { pub spec: PodConfigMapSpec }
@@ -386,6 +404,44 @@ pub fn parse_pod_configmap_refs(json: &[u8]) -> std::io::Result<Vec<String>> {
         if let Some(nr) = &v.configMap {
             if let Some(n) = &nr.name { names.insert(n.clone()); }
         }
+    }
+    let mut out: Vec<String> = names.into_iter().collect();
+    out.sort();
+    Ok(out)
+}
+
+/// Parse the Secret names a pod references. Covers every k8s mechanism that
+/// pulls a Secret into a pod:
+///   - `containers[].envFrom[].secretRef.name`           (whole-secret env)
+///   - `containers[].env[].valueFrom.secretKeyRef.name`  (single-key env)
+///   - `volumes[].secret.secretName`                     (mounted as files)
+///   - `spec.imagePullSecrets[].name`                    (registry credentials)
+/// `initContainers` is traversed alongside `containers`.
+pub fn parse_pod_secret_refs(json: &[u8]) -> std::io::Result<Vec<String>> {
+    let pod: PodForRefs = serde_json::from_slice(json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut names = HashSet::new();
+    for c in pod.spec.containers.iter().chain(pod.spec.initContainers.iter()) {
+        for ef in &c.envFrom {
+            if let Some(nr) = &ef.secretRef {
+                if let Some(n) = &nr.name { names.insert(n.clone()); }
+            }
+        }
+        for ev in &c.env {
+            if let Some(vf) = &ev.valueFrom {
+                if let Some(nr) = &vf.secretKeyRef {
+                    if let Some(n) = &nr.name { names.insert(n.clone()); }
+                }
+            }
+        }
+    }
+    for v in &pod.spec.volumes {
+        if let Some(sr) = &v.secret {
+            if let Some(n) = &sr.secretName { names.insert(n.clone()); }
+        }
+    }
+    for ips in &pod.spec.imagePullSecrets {
+        if let Some(n) = &ips.name { names.insert(n.clone()); }
     }
     let mut out: Vec<String> = names.into_iter().collect();
     out.sort();
@@ -1008,6 +1064,55 @@ mod tests {
         }"#;
         let refs = parse_pod_configmap_refs(json).unwrap();
         assert_eq!(refs, vec!["cm-a", "cm-b"]);
+    }
+
+    #[test]
+    fn parses_pod_secret_refs_deduped_sorted() {
+        // One pod that touches a Secret through every supported mechanism,
+        // with duplicates across sources — output must be deduped + sorted.
+        let json = br#"{
+            "spec": {
+                "containers": [{
+                    "name": "app",
+                    "envFrom": [{"secretRef": {"name": "sec-envfrom"}}],
+                    "env": [{"name": "TOKEN", "valueFrom": {"secretKeyRef": {"name": "sec-keyref", "key": "token"}}}]
+                }],
+                "initContainers": [{
+                    "name": "init",
+                    "envFrom": [{"secretRef": {"name": "sec-envfrom"}}]
+                }],
+                "volumes": [{"name": "certs", "secret": {"secretName": "sec-volume"}}],
+                "imagePullSecrets": [{"name": "sec-pull"}, {"name": "sec-volume"}]
+            }
+        }"#;
+        let refs = parse_pod_secret_refs(json).unwrap();
+        assert_eq!(refs, vec!["sec-envfrom", "sec-keyref", "sec-pull", "sec-volume"]);
+    }
+
+    #[test]
+    fn parses_pod_secret_refs_empty_when_pod_uses_no_secrets() {
+        let json = br#"{
+            "spec": {
+                "containers": [{"name": "app", "envFrom": [{"configMapRef": {"name": "cm-a"}}]}],
+                "volumes": [{"name": "v", "configMap": {"name": "cm-a"}}]
+            }
+        }"#;
+        let refs = parse_pod_secret_refs(json).unwrap();
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn parses_pod_secret_refs_tolerates_missing_optional_fields() {
+        // env without valueFrom, volume without secret, no imagePullSecrets —
+        // none of these should error, they just contribute no names.
+        let json = br#"{
+            "spec": {
+                "containers": [{"name": "app", "env": [{"name": "PLAIN", "value": "x"}]}],
+                "volumes": [{"name": "scratch", "emptyDir": {}}]
+            }
+        }"#;
+        let refs = parse_pod_secret_refs(json).unwrap();
+        assert!(refs.is_empty());
     }
 
     #[test]
